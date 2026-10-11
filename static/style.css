@@ -867,177 +867,55 @@ a {
   }
 }
 
-/* Hero turntable */
-.turntable {
+/* Original vinyl hero */
+.record-stage {
   justify-self: end;
-  width: min(31vw, 420px);
-  padding: clamp(16px, 2vw, 24px);
-  background: #171717;
-  color: var(--paper);
-  border: 1px solid var(--ink);
-  box-shadow: 18px 20px 0 var(--orange);
+  width: min(32vw, 410px);
+  aspect-ratio: 1;
   position: relative;
-  animation: deck-float 6s ease-in-out infinite;
 }
-.turntable::before {
-  content: "";
-  position: absolute;
-  width: 34%;
-  height: 5px;
-  top: -1px;
-  right: -1px;
-  background: var(--acid);
+.record-stage .hero-record {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  right: auto;
+  bottom: auto;
 }
-.turntable-top {
+
+/* One-command installer */
+.install-command {
+  max-width: 820px;
+  margin-top: 42px;
+  border: 1px solid rgba(243, 240, 232, 0.35);
+  background: #111;
+  box-shadow: 8px 8px 0 rgba(232, 255, 0, 0.16);
+}
+.install-command-head {
+  min-height: 43px;
+  padding: 0 16px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
-  color: #aaa;
+  border-bottom: 1px solid rgba(243, 240, 232, 0.2);
+  color: rgba(243, 240, 232, 0.55);
   font: 500 8px var(--mono);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
 }
-.deck {
-  aspect-ratio: 1;
-  position: relative;
-  overflow: hidden;
-  border: 1px solid #3b3b3b;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 45%), #202020;
+.install-command-head button {
+  color: var(--acid);
+  font: 500 8px var(--mono);
+  letter-spacing: 0.06em;
 }
-.vinyl {
-  position: absolute;
-  width: 82%;
-  aspect-ratio: 1;
-  left: 6%;
-  top: 9%;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle, transparent 0 3%, #111 3.5% 8%, transparent 8.5%),
-    repeating-radial-gradient(circle, #121212 0 4px, #2d2d2d 5px, #111 6px 9px);
-  box-shadow:
-    0 16px 24px rgba(0, 0, 0, 0.35),
-    inset 0 0 0 2px #070707;
+.install-command-head button:hover,
+.install-command-head button:focus-visible {
+  color: var(--paper);
 }
-.vinyl::after {
-  content: "";
-  position: absolute;
-  inset: 8%;
-  border-radius: 50%;
-  border: 1px solid rgba(232, 255, 0, 0.12);
-  box-shadow:
-    0 0 0 20px rgba(255, 255, 255, 0.025),
-    0 0 0 46px rgba(255, 255, 255, 0.018);
-}
-.vinyl-label {
-  position: absolute;
-  z-index: 1;
-  inset: 34%;
-  border-radius: 50%;
-  background: var(--acid);
-  color: var(--ink);
-  display: grid;
-  place-content: center;
-  text-align: center;
-  box-shadow: 0 0 0 7px rgba(232, 255, 0, 0.1);
-  animation: label-pulse 2.8s ease-in-out infinite;
-}
-.vinyl-label b {
-  font-size: clamp(23px, 3vw, 42px);
-  line-height: 0.8;
-  letter-spacing: -0.08em;
-}
-.vinyl-label small {
-  margin-top: 7px;
-  font: 600 6px var(--mono);
-  letter-spacing: 0.12em;
-}
-.tonearm {
-  position: absolute;
-  z-index: 2;
-  width: 9px;
-  height: 61%;
-  right: 10%;
-  top: 9%;
-  border-radius: 10px;
-  background: var(--paper);
-  box-shadow: 0 0 0 1px #111;
-  transform: rotate(18deg);
-  transform-origin: 50% 8px;
-  animation: needle-drift 5.5s ease-in-out infinite alternate;
-}
-.tonearm::before {
-  content: "";
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  left: 50%;
-  top: 0;
-  border-radius: 50%;
-  background: var(--orange);
-  border: 6px solid #111;
-  transform: translate(-50%, -30%);
-}
-.tonearm i {
-  position: absolute;
-  width: 24px;
-  height: 15px;
-  left: 50%;
-  bottom: -7px;
-  background: var(--orange);
-  border: 2px solid #111;
-  transform: translateX(-50%) rotate(-5deg);
-}
-.deck-meter {
-  height: 26px;
-  margin-top: 15px;
-  display: flex;
-  align-items: flex-end;
-  gap: 5px;
-}
-.deck-meter i {
-  width: 5px;
-  height: 25%;
-  background: var(--acid);
-  animation: meter-jump 0.85s ease-in-out infinite alternate;
-}
-.deck-meter i:nth-child(2n) {
-  height: 78%;
-  background: var(--orange);
-  animation-delay: -0.35s;
-}
-.deck-meter i:nth-child(3n) {
-  height: 48%;
-  animation-delay: -0.6s;
-}
-.deck-meter::after {
-  content: "PLAYING LOCALLY";
-  margin-left: auto;
-  align-self: center;
-  color: #8b8b8b;
-  font: 500 7px var(--mono);
-  letter-spacing: 0.1em;
-}
-@keyframes deck-float {
-  50% {
-    transform: translateY(-8px);
-    box-shadow: 18px 28px 0 var(--orange);
-  }
-}
-@keyframes label-pulse {
-  50% {
-    box-shadow: 0 0 0 12px rgba(232, 255, 0, 0.055);
-    transform: scale(1.03);
-  }
-}
-@keyframes needle-drift {
-  to {
-    transform: rotate(21deg);
-  }
-}
-@keyframes meter-jump {
-  to {
-    height: 96%;
-  }
+.install-command code {
+  display: block;
+  padding: 22px 18px;
+  overflow-wrap: anywhere;
+  color: var(--paper);
+  font: 400 clamp(10px, 1.15vw, 13px) / 1.6 var(--mono);
 }
 
 @media (max-width: 800px) {
@@ -1048,8 +926,8 @@ a {
   .hero-copy {
     width: min(100%, 440px);
   }
-  .turntable {
-    width: min(78vw, 330px);
+  .record-stage {
+    width: min(76vw, 330px);
     margin: 55px auto 0;
   }
 }
@@ -1061,19 +939,20 @@ a {
     font-size: clamp(58px, 17vw, 86px);
     margin: 48px 0 28px;
   }
-  .turntable {
-    width: min(82vw, 300px);
+  .record-stage {
+    width: min(80vw, 290px);
+  }
+  .record-stage .hero-record {
     box-shadow: 12px 14px 0 var(--orange);
   }
-  .deck-meter::after {
-    content: "LOCAL";
+  .install-command-head {
+    align-items: flex-start;
+    gap: 10px;
+    padding: 13px 14px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .turntable,
-  .vinyl-label,
-  .tonearm,
-  .deck-meter i {
+  .record-stage .hero-record {
     animation: none !important;
   }
 }

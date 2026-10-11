@@ -54,18 +54,10 @@
             uploaded. Nothing tracked.
           </p>
         </div>
-        <div class="turntable" aria-hidden="true">
-          <div class="turntable-top">
-            <span>SONKIP / 001</span><span>33 RPM</span>
-          </div>
-          <div class="deck">
-            <div class="vinyl">
-              <div class="vinyl-label"><b>SK</b><small>SIDE A</small></div>
-            </div>
-            <div class="tonearm"><i></i></div>
-          </div>
-          <div class="deck-meter">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <div class="record-stage" aria-hidden="true">
+          <div class="hero-record">
+            <div class="record-copy">SONKIP · LOCAL · PRIVATE ·</div>
+            <div class="record-center"><span>SK</span><small>001</small></div>
           </div>
         </div>
         <div class="sound-wave" aria-hidden="true">
@@ -150,17 +142,30 @@
       </section>
       <section id="pages-install" class="pages-install" hidden>
         <span class="step">01</span>
-        <p class="eyebrow">RUN IT WHERE YOUR MUSIC LIVES</p>
-        <h2>Private by<br />design.</h2>
+        <p class="eyebrow">ONE COMMAND · THEN PRESS PLAY</p>
+        <h2>Easy to<br />install.</h2>
         <p>
-          GitHub Pages hosts this open-source front door. The downloader runs on
-          your own computer, because your searches and files should stay there.
+          Sonkip installs and runs on your own computer, so your searches and
+          music stay yours. No account, cloud library, or Git clone required.
         </p>
+        <div class="install-command">
+          <div class="install-command-head">
+            <span>WINDOWS POWERSHELL</span>
+            <button id="copy-install-command" type="button">
+              COPY COMMAND
+            </button>
+          </div>
+          <code id="install-command"
+            >irm
+            https://raw.githubusercontent.com/Gr33nOps/sonkip/main/install.ps1 |
+            iex</code
+          >
+        </div>
         <div class="install-actions">
           <a
-            href="https://github.com/Gr33nOps/sonkip/releases/latest"
+            href="https://github.com/Gr33nOps/sonkip/archive/refs/heads/main.zip"
             class="primary-link"
-            >DOWNLOAD SONKIP <span>↘</span></a
+            >DOWNLOAD APP (.ZIP) <span>↘</span></a
           ><a href="https://github.com/Gr33nOps/sonkip" class="text-link"
             >VIEW SOURCE ↗</a
           >

@@ -30,9 +30,21 @@ Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which 
 
 ## Quick start
 
-Open a terminal in this project folder:
+### One-command Windows install
 
-### Windows PowerShell
+Open PowerShell and run:
+
+```powershell
+irm https://raw.githubusercontent.com/Gr33nOps/sonkip/main/install.ps1 | iex
+```
+
+This downloads Sonkip without Git, installs it under `%LOCALAPPDATA%\Sonkip`, creates its private Python environment, installs the dependencies, and opens the app. Use `Start Sonkip.cmd` in that folder whenever you want to launch it again.
+
+### Manual setup
+
+Download the repository ZIP, extract it, and open a terminal in that folder:
+
+#### Windows PowerShell
 
 ```powershell
 py -3 -m venv .venv
@@ -42,7 +54,7 @@ pip install -r requirements.txt
 python run.py
 ```
 
-### macOS / Linux
+#### macOS / Linux
 
 ```bash
 python3 -m venv .venv
@@ -86,17 +98,17 @@ All saved state is local to that folder. sonkip has no user accounts, telemetry,
 
 Routes:
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| GET | `/api/search?q=...` | Song search |
-| POST | `/api/downloads` | Start job with JSON `{ "video_id": "11-character-ID" }` |
-| POST | `/api/playlists` | Import and queue a playlist with JSON `{ "url": "https://..." }` |
-| GET | `/api/jobs` | Poll progress |
-| GET | `/api/tracks` | List downloaded songs |
-| GET | `/api/tracks/{id}/audio` | Stream local audio |
-| GET | `/api/tracks/{id}/file` | Download/copy audio |
-| DELETE | `/api/tracks/{id}` | Permanently remove a local track |
-| GET | `/api/health` | Status and local storage path |
+| Method | Endpoint                 | Purpose                                                          |
+| ------ | ------------------------ | ---------------------------------------------------------------- |
+| GET    | `/api/search?q=...`      | Song search                                                      |
+| POST   | `/api/downloads`         | Start job with JSON `{ "video_id": "11-character-ID" }`          |
+| POST   | `/api/playlists`         | Import and queue a playlist with JSON `{ "url": "https://..." }` |
+| GET    | `/api/jobs`              | Poll progress                                                    |
+| GET    | `/api/tracks`            | List downloaded songs                                            |
+| GET    | `/api/tracks/{id}/audio` | Stream local audio                                               |
+| GET    | `/api/tracks/{id}/file`  | Download/copy audio                                              |
+| DELETE | `/api/tracks/{id}`       | Permanently remove a local track                                 |
+| GET    | `/api/health`            | Status and local storage path                                    |
 
 Interactive backend documentation: `http://127.0.0.1:8000/docs`.
 
