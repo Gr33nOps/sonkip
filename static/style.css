@@ -867,157 +867,213 @@ a {
   }
 }
 
-/* Rhythmic hero motion */
-.record-stage {
+/* Hero turntable */
+.turntable {
   justify-self: end;
-  width: min(32vw, 410px);
-  aspect-ratio: 1;
-  position: relative;
-  animation: stage-float 4.8s ease-in-out infinite;
-}
-.record-stage .hero-record {
-  width: 100%;
-  height: 100%;
+  width: min(31vw, 420px);
+  padding: clamp(16px, 2vw, 24px);
+  background: #171717;
+  color: var(--paper);
+  border: 1px solid var(--ink);
   box-shadow: 18px 20px 0 var(--orange);
-  animation: vinyl-spin 11s linear infinite;
-  will-change: transform;
+  position: relative;
+  animation: deck-float 6s ease-in-out infinite;
 }
-.record-stage:hover .hero-record {
-  animation-duration: 3s;
-}
-.record-stage::after {
+.turntable::before {
   content: "";
   position: absolute;
-  inset: -7%;
-  border: 1px solid rgba(255, 77, 0, 0.28);
-  border-radius: 50%;
-  animation: pulse-ring 2.4s ease-out infinite;
-  pointer-events: none;
-}
-.music-note {
-  position: absolute;
-  z-index: 2;
-  color: var(--orange);
-  font: 700 34px var(--sans);
-  animation: note-dance 2.1s ease-in-out infinite;
-}
-.note-one {
-  left: -13%;
-  top: 13%;
-  transform: rotate(-14deg);
-}
-.note-two {
-  right: -12%;
-  bottom: 9%;
-  color: var(--ink);
-  animation-delay: -1s;
-}
-@keyframes vinyl-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@keyframes stage-float {
-  50% {
-    transform: translateY(-13px);
-  }
-}
-@keyframes pulse-ring {
-  0% {
-    opacity: 0.7;
-    transform: scale(0.92);
-  }
-  70%,
-  100% {
-    opacity: 0;
-    transform: scale(1.12);
-  }
-}
-@keyframes note-dance {
-  50% {
-    transform: translateY(-14px) rotate(12deg) scale(1.15);
-  }
-}
-.music-ticker {
-  height: 58px;
-  border-top: 1px solid var(--ink);
-  border-bottom: 1px solid var(--ink);
+  width: 34%;
+  height: 5px;
+  top: -1px;
+  right: -1px;
   background: var(--acid);
-  display: flex;
-  align-items: center;
-  overflow: hidden;
 }
-.music-ticker div {
+.turntable-top {
   display: flex;
-  align-items: center;
-  gap: 28px;
-  min-width: max-content;
-  font: 700 12px var(--mono);
-  animation: ticker-run 24s linear infinite;
-}
-.music-ticker span {
+  justify-content: space-between;
+  margin-bottom: 14px;
+  color: #aaa;
+  font: 500 8px var(--mono);
   letter-spacing: 0.08em;
 }
-.music-ticker b {
-  color: var(--orange);
-  font-size: 18px;
+.deck {
+  aspect-ratio: 1;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #3b3b3b;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 45%), #202020;
 }
-@keyframes ticker-run {
-  to {
-    transform: translateX(-50%);
+.vinyl {
+  position: absolute;
+  width: 82%;
+  aspect-ratio: 1;
+  left: 6%;
+  top: 9%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, transparent 0 3%, #111 3.5% 8%, transparent 8.5%),
+    repeating-radial-gradient(circle, #121212 0 4px, #2d2d2d 5px, #111 6px 9px);
+  box-shadow:
+    0 16px 24px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 2px #070707;
+}
+.vinyl::after {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1px solid rgba(232, 255, 0, 0.12);
+  box-shadow:
+    0 0 0 20px rgba(255, 255, 255, 0.025),
+    0 0 0 46px rgba(255, 255, 255, 0.018);
+}
+.vinyl-label {
+  position: absolute;
+  z-index: 1;
+  inset: 34%;
+  border-radius: 50%;
+  background: var(--acid);
+  color: var(--ink);
+  display: grid;
+  place-content: center;
+  text-align: center;
+  box-shadow: 0 0 0 7px rgba(232, 255, 0, 0.1);
+  animation: label-pulse 2.8s ease-in-out infinite;
+}
+.vinyl-label b {
+  font-size: clamp(23px, 3vw, 42px);
+  line-height: 0.8;
+  letter-spacing: -0.08em;
+}
+.vinyl-label small {
+  margin-top: 7px;
+  font: 600 6px var(--mono);
+  letter-spacing: 0.12em;
+}
+.tonearm {
+  position: absolute;
+  z-index: 2;
+  width: 9px;
+  height: 61%;
+  right: 10%;
+  top: 9%;
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 0 0 0 1px #111;
+  transform: rotate(18deg);
+  transform-origin: 50% 8px;
+  animation: needle-drift 5.5s ease-in-out infinite alternate;
+}
+.tonearm::before {
+  content: "";
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  left: 50%;
+  top: 0;
+  border-radius: 50%;
+  background: var(--orange);
+  border: 6px solid #111;
+  transform: translate(-50%, -30%);
+}
+.tonearm i {
+  position: absolute;
+  width: 24px;
+  height: 15px;
+  left: 50%;
+  bottom: -7px;
+  background: var(--orange);
+  border: 2px solid #111;
+  transform: translateX(-50%) rotate(-5deg);
+}
+.deck-meter {
+  height: 26px;
+  margin-top: 15px;
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+}
+.deck-meter i {
+  width: 5px;
+  height: 25%;
+  background: var(--acid);
+  animation: meter-jump 0.85s ease-in-out infinite alternate;
+}
+.deck-meter i:nth-child(2n) {
+  height: 78%;
+  background: var(--orange);
+  animation-delay: -0.35s;
+}
+.deck-meter i:nth-child(3n) {
+  height: 48%;
+  animation-delay: -0.6s;
+}
+.deck-meter::after {
+  content: "PLAYING LOCALLY";
+  margin-left: auto;
+  align-self: center;
+  color: #8b8b8b;
+  font: 500 7px var(--mono);
+  letter-spacing: 0.1em;
+}
+@keyframes deck-float {
+  50% {
+    transform: translateY(-8px);
+    box-shadow: 18px 28px 0 var(--orange);
   }
 }
-.hero-copy-block {
-  animation: copy-breathe 5s ease-in-out infinite;
-}
-@keyframes copy-breathe {
+@keyframes label-pulse {
   50% {
-    transform: translateY(-5px);
+    box-shadow: 0 0 0 12px rgba(232, 255, 0, 0.055);
+    transform: scale(1.03);
+  }
+}
+@keyframes needle-drift {
+  to {
+    transform: rotate(21deg);
+  }
+}
+@keyframes meter-jump {
+  to {
+    height: 96%;
   }
 }
 
 @media (max-width: 800px) {
-  .record-stage {
-    position: absolute;
-    width: 190px;
-    right: -35px;
-    bottom: 42px;
+  .hero {
+    min-height: auto;
+    padding-bottom: 72px;
   }
-  .record-stage .hero-record {
-    position: relative;
-    right: auto;
-    bottom: auto;
-    width: 100%;
+  .hero-copy {
+    width: min(100%, 440px);
   }
-  .music-note {
-    font-size: 25px;
-  }
-  .music-ticker {
-    height: 48px;
-  }
-  .music-ticker div {
-    gap: 20px;
-    font-size: 10px;
+  .turntable {
+    width: min(78vw, 330px);
+    margin: 55px auto 0;
   }
 }
 @media (max-width: 520px) {
-  .record-stage {
-    width: 160px;
+  .hero {
+    padding-top: 52px;
   }
-  .note-one {
-    left: -5%;
+  .hero-title {
+    font-size: clamp(58px, 17vw, 86px);
+    margin: 48px 0 28px;
   }
-  .note-two {
-    right: -2%;
+  .turntable {
+    width: min(82vw, 300px);
+    box-shadow: 12px 14px 0 var(--orange);
+  }
+  .deck-meter::after {
+    content: "LOCAL";
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .record-stage,
-  .record-stage .hero-record,
-  .record-stage::after,
-  .music-note,
-  .music-ticker div,
-  .hero-copy-block {
+  .turntable,
+  .vinyl-label,
+  .tonearm,
+  .deck-meter i {
     animation: none !important;
   }
 }
