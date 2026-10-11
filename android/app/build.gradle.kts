@@ -61,3 +61,9 @@ chaquopy {
 tasks.named("preBuild").configure {
     dependsOn(syncSonkipPython)
 }
+
+tasks.matching {
+    it.name.startsWith("merge") && it.name.endsWith("PythonSources")
+}.configureEach {
+    dependsOn(syncSonkipPython)
+}
