@@ -546,9 +546,17 @@ a {
 }
 .install-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 30px;
   margin-top: 45px;
+}
+.android-link {
+  background: var(--acid);
+  box-shadow: 7px 7px 0 var(--orange);
+}
+.android-link:hover {
+  box-shadow: 11px 11px 0 var(--orange);
 }
 .primary-link {
   background: var(--orange);

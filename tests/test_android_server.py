@@ -1,0 +1,87 @@
+import json
+import threading
+import urllib.request
+from pathlib import Path
+
+from app.android_server import create_android_server
+
+
+def request_json(url: str, method: str = "GET", body: dict | None = None):
+    data = json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=3) as response:
+        return response.status, json.load(response)
+
+
+def test_android_server_serves_health_and_frontend(tmp_path: Path):
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("<h1>sonkip android</h1>", encoding="utf-8")
+    (static_dir / "app.js").write_text("console.log('sonkip')", encoding="utf-8")
+
+    server = create_android_server(tmp_path / "music", static_dir, port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        status, health = request_json(f"{base_url}/api/health")
+        assert status == 200
+        assert health["ok"] is True
+        assert health["platform"] == "android"
+
+        with urllib.request.urlopen(f"{base_url}/", timeout=3) as response:
+            assert response.status == 200
+            assert b"sonkip android" in response.read()
+
+        with urllib.request.urlopen(f"{base_url}/static/app.js", timeout=3) as response:
+            assert response.headers.get_content_type() == "text/javascript"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+def test_android_server_rejects_invalid_download_id(tmp_path: Path):
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("sonkip", encoding="utf-8")
+
+    server = create_android_server(tmp_path / "music", static_dir, port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        try:
+            request_json(
+                f"{base_url}/api/downloads",
+                method="POST",
+                body={"video_id": "not-valid"},
+            )
+        except urllib.error.HTTPError as error:
+            assert error.code == 422
+            payload = json.load(error)
+            assert payload["detail"] == "Invalid video ID"
+        else:
+            raise AssertionError("invalid video ID should be rejected")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+def test_android_server_accepts_android_string_paths(tmp_path: Path):
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("sonkip", encoding="utf-8")
+
+    server = create_android_server(str(tmp_path / "music"), str(static_dir), port=0)
+    try:
+        assert server.store.tracks_dir.parent == (tmp_path / "music").resolve()
+        assert server.static_dir == static_dir.resolve()
+    finally:
+        server.server_close()

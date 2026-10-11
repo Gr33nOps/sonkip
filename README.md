@@ -4,6 +4,8 @@ An open-source **local-only web app** for finding tracks or importing playlists,
 
 **Website:** https://gr33nops.github.io/sonkip/
 
+**Android APK:** https://github.com/Gr33nOps/sonkip/releases/download/android-latest/sonkip-android.apk
+
 The GitHub Pages site is a static project page. The downloader intentionally runs on your own computer so searches, audio files, and library data are never sent to a sonkip server.
 
 ![Stack](https://img.shields.io/badge/Stack-FastAPI%20%2B%20vanilla%20JS-8fddad)
@@ -29,6 +31,12 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which is installed by the `yt-dlp[default]` dependency in this project. See the [yt-dlp EJS guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
 
 ## Quick start
+
+### Android
+
+Download the current APK from the website or the link above, allow installation from your browser when Android asks, and open Sonkip. The APK bundles its own Python runtime and runs the same interface and download engine entirely on `127.0.0.1`. Its music library is stored in Android app-private storage and is removed if the app is uninstalled.
+
+Android 7.0 (API 24) or newer is required. The current APK supports 32-bit and 64-bit ARM devices. Availability of individual sources depends on yt-dlp support and the source's own restrictions; Sonkip does not bypass DRM or paywalls.
 
 ### One-command Windows install
 
@@ -77,6 +85,7 @@ sonkip-local/
 │   ├── main.py          # HTTP API and secure local file serving
 │   ├── engine.py        # Search, audio downloader, jobs and progress
 │   └── storage.py       # Persistent SQLite library
+├── android/              # Native WebView + embedded Python APK project
 ├── static/
 │   ├── index.html       # UI
 │   ├── style.css        # Responsive styling
