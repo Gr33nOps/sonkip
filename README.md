@@ -17,7 +17,8 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 - Download the best **audio-only** source format with `yt-dlp` (`bestaudio`). No re-encoding to MP3/FLAC, so no avoidable quality loss.
 - Download progress, speed and estimated time; up to two concurrent downloads.
 - SQLite library persisted between restarts; offline playback, file export and deletion.
-- Responsive animated UI with no frontend build tools, cookies, analytics, or CDN JavaScript.
+- Responsive animated UI with no frontend build tools, tracking cookies, analytics, or CDN JavaScript.
+- Optional local YouTube authentication for content the user is already allowed to access; the session file never leaves the device and can be deleted from the app.
 - FastAPI binds to `127.0.0.1` **only**, not a public interface.
 
 > Only download content you own or have permission to download and comply with the source's terms. sonkip. does not bypass DRM or paywalls. Some sources/videos are not downloadable. YouTube audio is generally lossy; this app **cannot create genuine lossless FLAC** from lossy source audio. Search and playlist imports need Internet; playing previously downloaded tracks works offline.
@@ -36,7 +37,9 @@ Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which 
 
 Download the current APK from the website or the link above, allow installation from your browser when Android asks, and open Sonkip. The APK bundles its own Python runtime and runs the same interface and download engine entirely on `127.0.0.1`. Its music library is stored in Android app-private storage and is removed if the app is uninstalled.
 
-Android 7.0 (API 24) or newer is required. The current APK supports 32-bit and 64-bit ARM devices. Public YouTube tracks use cookie-free playback clients, and completed songs can be exported to the phone's Music folder. Availability still depends on yt-dlp and the source: Sonkip cannot bypass sign-in requirements, DRM, private media, age gates, regional blocks, or paywalls.
+Android 7.0 (API 24) or newer is required. The current APK supports 32-bit and 64-bit ARM devices. Public YouTube tracks use cookie-free playback clients, and completed songs can be exported to the phone's Music folder. For content that legitimately requires the user's account, open **Access** and choose a Netscape-format YouTube `cookies.txt` export; Sonkip stores it in app-private storage and deletes it when **Disconnect** is pressed. Sonkip cannot bypass DRM, private-media permissions, regional blocks, or paywalls.
+
+Desktop installs also include the experimental WebPoClient provider, which can automatically mint current YouTube proof-of-origin tokens using locally installed Chrome or Chromium when yt-dlp requests one. This feature still follows the source's permissions and does not defeat DRM.
 
 ### One-command Windows install
 

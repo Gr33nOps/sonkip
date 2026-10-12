@@ -136,13 +136,26 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                 },
             )
             return
+        if path == "/api/auth/youtube":
+            self._json(
+                HTTPStatus.OK,
+                {"connected": self.server.store.youtube_auth_connected()},
+            )
+            return
         if path == "/api/search":
             query = parse_qs(parsed.query).get("q", [""])[0].strip()
             if len(query) < 2 or len(query) > 120:
                 self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": "Enter at least 2 characters"})
                 return
             try:
-                self._json(HTTPStatus.OK, {"results": search_music(query)})
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "results": search_music(
+                            query, self.server.store.youtube_cookies_path
+                        )
+                    },
+                )
             except Exception as exc:
                 self._json(HTTPStatus.BAD_GATEWAY, {"detail": f"Search provider unavailable: {str(exc)[:220]}"})
             return
@@ -177,7 +190,9 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, {"url": f"/api/tracks/{local['id']}/audio", "local": True})
                 return
             try:
-                stream_url = get_stream_url(video_id)
+                stream_url = get_stream_url(
+                    video_id, self.server.store.youtube_cookies_path
+                )
                 if not stream_url:
                     self._json(HTTPStatus.NOT_FOUND, {"detail": "Audio stream not found"})
                 else:
@@ -206,9 +221,20 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
             else:
                 self._json(HTTPStatus.ACCEPTED, {"job_id": job_id})
             return
+        if path == "/api/auth/youtube":
+            try:
+                self.server.store.save_youtube_cookies(str(body.get("cookies", "")))
+            except ValueError as exc:
+                self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": str(exc)})
+            else:
+                self._json(HTTPStatus.OK, {"connected": True})
+            return
         if path == "/api/playlists":
             try:
-                playlist = extract_playlist(str(body.get("url", "")))
+                playlist = extract_playlist(
+                    str(body.get("url", "")),
+                    self.server.store.youtube_cookies_path,
+                )
                 jobs = [
                     {**entry, "job_id": self.server.manager.start(entry["video_id"])}
                     for entry in playlist["entries"]
@@ -228,7 +254,12 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.NOT_FOUND, {"detail": "Not found"})
 
     def do_DELETE(self) -> None:
-        match = DELETE_TRACK_ROUTE.fullmatch(urlparse(self.path).path)
+        path = urlparse(self.path).path
+        if path == "/api/auth/youtube":
+            self.server.store.clear_youtube_cookies()
+            self._json(HTTPStatus.OK, {"connected": False})
+            return
+        match = DELETE_TRACK_ROUTE.fullmatch(path)
         if not match:
             self._json(HTTPStatus.NOT_FOUND, {"detail": "Not found"})
             return

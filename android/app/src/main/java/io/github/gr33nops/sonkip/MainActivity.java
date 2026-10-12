@@ -18,6 +18,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.URLUtil;
+import android.webkit.ValueCallback;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -32,9 +33,11 @@ import java.net.URL;
 
 public class MainActivity extends Activity {
     private static final String LOCAL_URL = "http://127.0.0.1:8765/";
+    private static final int FILE_PICKER_REQUEST = 42;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private WebView webView;
     private TextView statusView;
+    private ValueCallback<Uri[]> filePickerCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,7 +59,23 @@ public class MainActivity extends Activity {
         webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
         webView.getSettings().setAllowFileAccess(false);
         webView.getSettings().setAllowContentAccess(false);
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(
+                    WebView view,
+                    ValueCallback<Uri[]> callback,
+                    WebChromeClient.FileChooserParams params) {
+                if (filePickerCallback != null) {
+                    filePickerCallback.onReceiveValue(null);
+                }
+                filePickerCallback = callback;
+                Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                picker.addCategory(Intent.CATEGORY_OPENABLE);
+                picker.setType("text/plain");
+                startActivityForResult(picker, FILE_PICKER_REQUEST);
+                return true;
+            }
+        });
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
             try {
                 String filename = URLUtil.guessFileName(url, contentDisposition, mimeType);
@@ -164,6 +183,17 @@ public class MainActivity extends Activity {
     private void showError(String detail) {
         mainHandler.post(() -> statusView.setText(
                 "SONKIP COULD NOT START\n\n" + (detail == null ? "Unknown error" : detail)));
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == FILE_PICKER_REQUEST && filePickerCallback != null) {
+            Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+            filePickerCallback.onReceiveValue(result);
+            filePickerCallback = null;
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override

@@ -39,13 +39,18 @@
           SAVED <b id="nav-lib-count">0</b>
         </button>
       </nav>
-      <span class="local-pill"><i></i> LOCAL ONLY</span>
+      <div class="header-actions">
+        <span class="local-pill"><i></i> LOCAL ONLY</span>
+        <button id="auth-open-btn" class="auth-open-btn" type="button">
+          ACCESS
+        </button>
+      </div>
     </header>
     <main>
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy-block">
           <p class="eyebrow">
-            OPEN SOURCE MUSIC TOOL <span>—</span> NO ACCOUNT
+            OPEN SOURCE MUSIC TOOL <span>—</span> NO ACCOUNT REQUIRED
           </p>
           <h1 id="hero-title" class="hero-title">
             <span>Find it.</span><span>Save it.</span><span>Play it.</span>
@@ -178,7 +183,7 @@
           >
         </div>
         <div class="privacy-row">
-          <span>NO SIGN UP</span><span>NO ANALYTICS</span
+          <span>NO SIGN UP REQUIRED</span><span>NO ANALYTICS</span
           ><span>NO CLOUD LIBRARY</span>
         </div>
       </section>
@@ -232,6 +237,39 @@
       </button>
     </div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
+      <button
+        id="auth-close-btn"
+        class="auth-close-btn"
+        type="button"
+        aria-label="Close"
+      >
+        ×
+      </button>
+      <p class="eyebrow">OPTIONAL · LOCAL ONLY</p>
+      <h2 id="auth-title">Restricted<br />content access.</h2>
+      <p class="auth-copy">
+        Public music works without an account. If YouTube requires sign-in for
+        content you are allowed to access, choose your exported YouTube
+        <strong>cookies.txt</strong> file. It stays only on this device.
+      </p>
+      <div id="auth-disconnected">
+        <input id="auth-file" type="file" accept=".txt,text/plain" hidden />
+        <button id="auth-file-btn" class="auth-primary" type="button">
+          CHOOSE SIGN-IN FILE ↗
+        </button>
+      </div>
+      <div id="auth-connected" hidden>
+        <p class="auth-status"><i></i> YOUTUBE ACCESS CONNECTED</p>
+        <button id="auth-disconnect-btn" class="auth-secondary" type="button">
+          DISCONNECT &amp; DELETE LOCAL ACCESS
+        </button>
+      </div>
+      <p class="auth-warning">
+        Use only your own account and content you have permission to download.
+        Sonkip cannot bypass DRM, paywalls, or provider permissions.
+      </p>
+    </dialog>
     <audio id="audio-el" preload="auto"></audio>
   </body>
 </html>

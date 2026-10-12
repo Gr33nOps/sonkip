@@ -25,13 +25,17 @@ class PlaylistRequest(BaseModel):
     url: str
 
 
+class YoutubeAuthRequest(BaseModel):
+    cookies: str
+
+
 def create_app(data_dir: Path | None = None) -> FastAPI:
     legacy_home = Path.home() / "Music" / "Sonora"
     default_home = legacy_home if legacy_home.exists() else Path.home() / "Music" / "Sonkip"
     home = data_dir or Path(os.getenv("LOCALMUSIC_HOME", default_home))
     store = MusicStore(home)
     manager = DownloadManager(store)
-    app = FastAPI(title="sonkip. Local API", version="1.1.0")
+    app = FastAPI(title="sonkip. Local API", version="1.2.0")
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     app.state.store = store
     app.state.manager = manager
@@ -40,13 +44,34 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def health():
         return {"ok": True, "library_path": str(store.tracks_dir)}
 
+    @app.get("/api/auth/youtube")
+    def youtube_auth_status():
+        return {"connected": store.youtube_auth_connected()}
+
+    @app.post("/api/auth/youtube")
+    def connect_youtube(body: YoutubeAuthRequest):
+        try:
+            store.save_youtube_cookies(body.cookies)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"connected": True}
+
+    @app.delete("/api/auth/youtube")
+    def disconnect_youtube():
+        store.clear_youtube_cookies()
+        return {"connected": False}
+
     @app.get("/api/search")
     async def search(q: str = Query(min_length=2, max_length=120)):
         q = q.strip()
         if len(q) < 2:
             raise HTTPException(status_code=422, detail="Enter at least 2 characters")
         try:
-            return {"results": await asyncio.to_thread(search_music, q)}
+            return {
+                "results": await asyncio.to_thread(
+                    search_music, q, store.youtube_cookies_path
+                )
+            }
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Search provider unavailable: {str(exc)[:220]}") from exc
 
@@ -58,7 +83,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         if local_track:
             return {"url": f"/api/tracks/{local_track['id']}/audio", "local": True}
         try:
-            url = await asyncio.to_thread(get_stream_url, video_id)
+            url = await asyncio.to_thread(
+                get_stream_url, video_id, store.youtube_cookies_path
+            )
             if not url:
                 raise HTTPException(status_code=404, detail="Audio stream not found")
             return {"url": url, "local": False}
@@ -78,7 +105,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @app.post("/api/playlists", status_code=202)
     async def download_playlist(body: PlaylistRequest):
         try:
-            playlist = await asyncio.to_thread(extract_playlist, body.url)
+            playlist = await asyncio.to_thread(
+                extract_playlist, body.url, store.youtube_cookies_path
+            )
             jobs = [
                 {**entry, "job_id": manager.start(entry["video_id"])}
                 for entry in playlist["entries"]

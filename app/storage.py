@@ -15,6 +15,7 @@ class MusicStore:
         self.tracks_dir = self.home / "tracks"
         self.tracks_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.home / "library.sqlite3"
+        self.youtube_cookies_path = self.home / "private" / "youtube-cookies.txt"
         with self._connect() as db:
             db.execute("""
                 CREATE TABLE IF NOT EXISTS tracks (
@@ -31,6 +32,30 @@ class MusicStore:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+    def youtube_auth_connected(self) -> bool:
+        return self.youtube_cookies_path.is_file()
+
+    def save_youtube_cookies(self, content: str) -> None:
+        if len(content.encode("utf-8")) > 1024 * 1024:
+            raise ValueError("That sign-in file is too large")
+        if not content.startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File")):
+            raise ValueError("Choose a Netscape cookies.txt file")
+        youtube_lines = []
+        for line in content.splitlines():
+            row_text = line.removeprefix("#HttpOnly_")
+            row = row_text.split("\t")
+            if len(row) == 7 and row[0].lstrip(".").endswith("youtube.com"):
+                youtube_lines.append(line)
+        if not youtube_lines:
+            raise ValueError("That file does not contain a YouTube sign-in")
+        safe_content = "# Netscape HTTP Cookie File\n" + "\n".join(youtube_lines) + "\n"
+        self.youtube_cookies_path.parent.mkdir(parents=True, exist_ok=True)
+        self.youtube_cookies_path.write_text(safe_content, encoding="utf-8")
+        self.youtube_cookies_path.chmod(0o600)
+
+    def clear_youtube_cookies(self) -> None:
+        self.youtube_cookies_path.unlink(missing_ok=True)
 
     def _connect(self):
         db = sqlite3.connect(self.db_path, timeout=15)

@@ -14,6 +14,7 @@
     toastTimeout: null,
     pollInterval: null,
     playlist: null,
+    authConnected: false,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -66,6 +67,25 @@
       throw new Error(data.detail || `Request failed (${res.status})`);
     }
     return data;
+  }
+
+  function renderAuthStatus() {
+    const connected = state.authConnected;
+    $("auth-disconnected").hidden = connected;
+    $("auth-connected").hidden = !connected;
+    $("auth-open-btn").classList.toggle("connected", connected);
+    $("auth-open-btn").textContent = connected ? "ACCESS ✓" : "ACCESS";
+  }
+
+  async function loadAuthStatus() {
+    try {
+      const status = await api("/api/auth/youtube");
+      state.authConnected = Boolean(status.connected);
+      renderAuthStatus();
+    } catch {
+      state.authConnected = false;
+      renderAuthStatus();
+    }
   }
 
   // --- Rendering ---
@@ -693,6 +713,39 @@
     });
   }
 
+  const authDialog = $("auth-dialog");
+  $("auth-open-btn").addEventListener("click", () => authDialog.showModal());
+  $("auth-close-btn").addEventListener("click", () => authDialog.close());
+  $("auth-file-btn").addEventListener("click", () => $("auth-file").click());
+  $("auth-file").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const cookies = await file.text();
+      const result = await api("/api/auth/youtube", {
+        method: "POST",
+        body: JSON.stringify({ cookies }),
+      });
+      state.authConnected = Boolean(result.connected);
+      renderAuthStatus();
+      showToast("YouTube access connected locally.");
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      event.target.value = "";
+    }
+  });
+  $("auth-disconnect-btn").addEventListener("click", async () => {
+    try {
+      await api("/api/auth/youtube", { method: "DELETE" });
+      state.authConnected = false;
+      renderAuthStatus();
+      showToast("YouTube access removed from this device.");
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
+
   // Init
   if (isStaticPages) {
     $("download-workspace").hidden = true;
@@ -700,8 +753,9 @@
     document.querySelector(".header-nav").hidden = true;
     document.querySelector(".local-pill").innerHTML =
       "<i></i> GITHUB / OPEN SOURCE";
+    $("auth-open-btn").hidden = true;
   } else {
-    loadLibrary().then(() => {
+    Promise.all([loadLibrary(), loadAuthStatus()]).then(() => {
       render();
     });
   }

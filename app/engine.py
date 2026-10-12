@@ -6,6 +6,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from yt_dlp import YoutubeDL
@@ -21,9 +22,21 @@ URL_RE = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
 COOKIE_FREE_YOUTUBE_ARGS = {
     "youtube": {"player_client": ["android_vr", "web_safari"]},
 }
+AUTHENTICATED_YOUTUBE_ARGS = {
+    "youtube": {"player_client": ["web_safari", "mweb"]},
+}
 
 
-def get_stream_url(video_id: str) -> str | None:
+def youtube_access_options(cookiefile: Path | None = None) -> dict[str, Any]:
+    if cookiefile and cookiefile.is_file():
+        return {
+            "cookiefile": str(cookiefile),
+            "extractor_args": AUTHENTICATED_YOUTUBE_ARGS,
+        }
+    return {"extractor_args": COOKIE_FREE_YOUTUBE_ARGS}
+
+
+def get_stream_url(video_id: str, cookiefile: Path | None = None) -> str | None:
     """Extract direct audio stream URL for preview playback."""
     if not VIDEO_ID_RE.fullmatch(video_id):
         return None
@@ -34,14 +47,14 @@ def get_stream_url(video_id: str) -> str | None:
         "skip_download": True,
         "socket_timeout": 15,
         "noplaylist": True,
-        "extractor_args": COOKIE_FREE_YOUTUBE_ARGS,
+        **youtube_access_options(cookiefile),
     }
     with YoutubeDL(opts) as ydl:
         info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
         return info.get("url") if isinstance(info, dict) else None
 
 
-def search_music(query: str) -> list[dict[str, Any]]:
+def search_music(query: str, cookiefile: Path | None = None) -> list[dict[str, Any]]:
     """Search YouTube by song name or direct link; no download occurs here."""
     clean = query.strip()
     opts = {
@@ -53,7 +66,7 @@ def search_music(query: str) -> list[dict[str, Any]]:
         "playlistend": 15,
         "socket_timeout": 20,
         "noplaylist": False,
-        "extractor_args": COOKIE_FREE_YOUTUBE_ARGS,
+        **youtube_access_options(cookiefile),
     }
 
     yt_match = re.search(r"(?:v=|\/|youtu\.be\/|^)([A-Za-z0-9_-]{11})(?:[&?]|$)", clean)
@@ -95,7 +108,7 @@ def search_music(query: str) -> list[dict[str, Any]]:
     return results
 
 
-def extract_playlist(url: str) -> dict[str, Any]:
+def extract_playlist(url: str, cookiefile: Path | None = None) -> dict[str, Any]:
     """Return downloadable entries from any playlist URL supported by yt-dlp."""
     clean = url.strip()
     if not URL_RE.fullmatch(clean):
@@ -107,7 +120,7 @@ def extract_playlist(url: str) -> dict[str, Any]:
         "skip_download": True,
         "ignoreerrors": True,
         "socket_timeout": 30,
-        "extractor_args": COOKIE_FREE_YOUTUBE_ARGS,
+        **youtube_access_options(cookiefile),
     }
     with YoutubeDL(opts) as ydl:
         data = ydl.extract_info(clean, download=False)
@@ -201,7 +214,7 @@ class DownloadManager:
                 "progress_hooks": [progress],
                 "restrictfilenames": True,
                 "overwrites": False,
-                "extractor_args": COOKIE_FREE_YOUTUBE_ARGS,
+                **youtube_access_options(self.store.youtube_cookies_path),
             }
             with YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)

@@ -85,3 +85,31 @@ def test_android_server_accepts_android_string_paths(tmp_path: Path):
         assert server.static_dir == static_dir.resolve()
     finally:
         server.server_close()
+
+
+def test_android_server_keeps_youtube_auth_local(tmp_path: Path):
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("sonkip", encoding="utf-8")
+    server = create_android_server(tmp_path / "music", static_dir, port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    cookies = (
+        "# Netscape HTTP Cookie File\n"
+        ".youtube.com\tTRUE\t/\tTRUE\t2147483647\tSID\tlocal-session\n"
+    )
+    try:
+        assert request_json(f"{base_url}/api/auth/youtube")[1] == {"connected": False}
+        assert request_json(
+            f"{base_url}/api/auth/youtube", "POST", {"cookies": cookies}
+        )[1] == {"connected": True}
+        assert server.store.youtube_cookies_path.read_text(encoding="utf-8") == cookies
+        assert request_json(f"{base_url}/api/auth/youtube", "DELETE")[1] == {
+            "connected": False
+        }
+        assert not server.store.youtube_cookies_path.exists()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)

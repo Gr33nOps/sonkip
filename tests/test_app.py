@@ -52,10 +52,14 @@ class FakeYoutubeDL:
         }
         assert download is True
         assert self.opts["format"] == "bestaudio"
-        assert self.opts["extractor_args"] == {
-            "youtube": {"player_client": ["android_vr", "web_safari"]}
-        }
-        assert "cookiefile" not in self.opts
+        if "cookiefile" in self.opts:
+            assert self.opts["extractor_args"] == {
+                "youtube": {"player_client": ["web_safari", "mweb"]}
+            }
+        else:
+            assert self.opts["extractor_args"] == {
+                "youtube": {"player_client": ["android_vr", "web_safari"]}
+            }
         assert "cookiesfrombrowser" not in self.opts
         filename = self.opts["outtmpl"].replace("%(ext)s", "webm")
         from pathlib import Path
@@ -140,5 +144,74 @@ def test_playlist_import_queues_every_valid_song(monkeypatch, tmp_path):
         assert payload["title"] == "Road trip"
         assert payload["count"] == 2
         assert {job["video_id"] for job in payload["jobs"]} == {VIDEO_ID, "M7lc1UVf-VE"}
+
+
+def test_youtube_auth_is_saved_locally_and_can_be_disconnected(tmp_path):
+    app = create_app(tmp_path)
+    cookies = (
+        "# Netscape HTTP Cookie File\n"
+        ".youtube.com\tTRUE\t/\tTRUE\t2147483647\tSID\tlocal-session\n"
+    )
+    with TestClient(app, base_url="http://localhost") as client:
+        assert client.get("/api/auth/youtube").json() == {"connected": False}
+
+        connected = client.post("/api/auth/youtube", json={"cookies": cookies})
+        assert connected.status_code == 200
+        assert connected.json() == {"connected": True}
+        assert app.state.store.youtube_cookies_path.read_text(encoding="utf-8") == cookies
+        assert client.get("/api/auth/youtube").json() == {"connected": True}
+
+        disconnected = client.delete("/api/auth/youtube")
+        assert disconnected.json() == {"connected": False}
+        assert not app.state.store.youtube_cookies_path.exists()
+
+
+def test_youtube_auth_rejects_non_cookie_files(tmp_path):
+    app = create_app(tmp_path)
+    with TestClient(app, base_url="http://localhost") as client:
+        response = client.post(
+            "/api/auth/youtube",
+            json={"cookies": "this is not a browser cookie export"},
+        )
+        assert response.status_code == 422
+        assert client.get("/api/auth/youtube").json() == {"connected": False}
+
+
+def test_youtube_auth_discards_unrelated_site_cookies(tmp_path):
+    app = create_app(tmp_path)
+    cookies = (
+        "# Netscape HTTP Cookie File\n"
+        ".youtube.com\tTRUE\t/\tTRUE\t2147483647\tSID\tlocal-session\n"
+        ".example.com\tTRUE\t/\tTRUE\t2147483647\tSECRET\tdo-not-store\n"
+    )
+    with TestClient(app, base_url="http://localhost") as client:
+        assert client.post("/api/auth/youtube", json={"cookies": cookies}).status_code == 200
+    saved = app.state.store.youtube_cookies_path.read_text(encoding="utf-8")
+    assert ".youtube.com" in saved
+    assert ".example.com" not in saved
+    assert "do-not-store" not in saved
+
+
+def test_download_uses_connected_youtube_session(monkeypatch, tmp_path):
+    class AuthenticatedYoutubeDL(FakeYoutubeDL):
+        def __init__(self, opts):
+            assert opts["cookiefile"] == str(tmp_path / "private" / "youtube-cookies.txt")
+            super().__init__(opts)
+
+    monkeypatch.setattr(engine, "YoutubeDL", AuthenticatedYoutubeDL)
+    app = create_app(tmp_path)
+    cookies = (
+        "# Netscape HTTP Cookie File\n"
+        ".youtube.com\tTRUE\t/\tTRUE\t2147483647\tSID\tlocal-session\n"
+    )
+    with TestClient(app, base_url="http://localhost") as client:
+        assert client.post("/api/auth/youtube", json={"cookies": cookies}).status_code == 200
+        job_id = client.post("/api/downloads", json={"video_id": VIDEO_ID}).json()["job_id"]
+        for _ in range(100):
+            job = client.get(f"/api/jobs/{job_id}").json()
+            if job["status"] in ("complete", "error"):
+                break
+            time.sleep(.01)
+        assert job["status"] == "complete", job
 
 
