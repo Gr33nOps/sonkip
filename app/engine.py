@@ -15,6 +15,13 @@ from .storage import MusicStore
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 URL_RE = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
 
+# These clients expose ordinary public streams without importing browser
+# cookies. android_vr is the most reliable cookie-free option; web_safari is
+# retained as a fallback for videos which that client doesn't expose.
+COOKIE_FREE_YOUTUBE_ARGS = {
+    "youtube": {"player_client": ["android_vr", "web_safari"]},
+}
+
 
 def get_stream_url(video_id: str) -> str | None:
     """Extract direct audio stream URL for preview playback."""
@@ -27,6 +34,7 @@ def get_stream_url(video_id: str) -> str | None:
         "skip_download": True,
         "socket_timeout": 15,
         "noplaylist": True,
+        "extractor_args": COOKIE_FREE_YOUTUBE_ARGS,
     }
     with YoutubeDL(opts) as ydl:
         info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
@@ -45,6 +53,7 @@ def search_music(query: str) -> list[dict[str, Any]]:
         "playlistend": 15,
         "socket_timeout": 20,
         "noplaylist": False,
+        "extractor_args": COOKIE_FREE_YOUTUBE_ARGS,
     }
 
     yt_match = re.search(r"(?:v=|\/|youtu\.be\/|^)([A-Za-z0-9_-]{11})(?:[&?]|$)", clean)
@@ -98,6 +107,7 @@ def extract_playlist(url: str) -> dict[str, Any]:
         "skip_download": True,
         "ignoreerrors": True,
         "socket_timeout": 30,
+        "extractor_args": COOKIE_FREE_YOUTUBE_ARGS,
     }
     with YoutubeDL(opts) as ydl:
         data = ydl.extract_info(clean, download=False)
@@ -191,6 +201,7 @@ class DownloadManager:
                 "progress_hooks": [progress],
                 "restrictfilenames": True,
                 "overwrites": False,
+                "extractor_args": COOKIE_FREE_YOUTUBE_ARGS,
             }
             with YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)

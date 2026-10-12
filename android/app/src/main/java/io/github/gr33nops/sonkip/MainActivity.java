@@ -2,10 +2,13 @@ package io.github.gr33nops.sonkip;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.DownloadManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -14,8 +17,10 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.URLUtil;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.chaquo.python.PyObject;
 import com.chaquo.python.Python;
@@ -52,6 +57,25 @@ public class MainActivity extends Activity {
         webView.getSettings().setAllowFileAccess(false);
         webView.getSettings().setAllowContentAccess(false);
         webView.setWebChromeClient(new WebChromeClient());
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+            try {
+                String filename = URLUtil.guessFileName(url, contentDisposition, mimeType);
+                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                request.setMimeType(mimeType);
+                request.setTitle(filename);
+                request.setDescription("Exporting from Sonkip");
+                request.setNotificationVisibility(
+                        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC, filename);
+                }
+                DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                manager.enqueue(request);
+                Toast.makeText(this, "Saving " + filename, Toast.LENGTH_SHORT).show();
+            } catch (Exception error) {
+                Toast.makeText(this, "Could not export this song", Toast.LENGTH_LONG).show();
+            }
+        });
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {

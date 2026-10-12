@@ -52,6 +52,11 @@ class FakeYoutubeDL:
         }
         assert download is True
         assert self.opts["format"] == "bestaudio"
+        assert self.opts["extractor_args"] == {
+            "youtube": {"player_client": ["android_vr", "web_safari"]}
+        }
+        assert "cookiefile" not in self.opts
+        assert "cookiesfrombrowser" not in self.opts
         filename = self.opts["outtmpl"].replace("%(ext)s", "webm")
         from pathlib import Path
         Path(filename).write_bytes(b"OggS" + b"a" * 100)

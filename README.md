@@ -36,7 +36,7 @@ Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which 
 
 Download the current APK from the website or the link above, allow installation from your browser when Android asks, and open Sonkip. The APK bundles its own Python runtime and runs the same interface and download engine entirely on `127.0.0.1`. Its music library is stored in Android app-private storage and is removed if the app is uninstalled.
 
-Android 7.0 (API 24) or newer is required. The current APK supports 32-bit and 64-bit ARM devices. Availability of individual sources depends on yt-dlp support and the source's own restrictions; Sonkip does not bypass DRM or paywalls.
+Android 7.0 (API 24) or newer is required. The current APK supports 32-bit and 64-bit ARM devices. Public YouTube tracks use cookie-free playback clients, and completed songs can be exported to the phone's Music folder. Availability still depends on yt-dlp and the source: Sonkip cannot bypass sign-in requirements, DRM, private media, age gates, regional blocks, or paywalls.
 
 ### One-command Windows install
 
