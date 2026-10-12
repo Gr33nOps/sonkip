@@ -22,12 +22,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify platform downloads
+        shell: bash
+        run: |
+          node --test tests/platform_detection.test.cjs
+          bash -n install.sh
       - name: Prepare static site
         shell: bash
         run: |
           mkdir -p _site/static
           cp static/index.html _site/index.html
-          cp static/style.css static/app.js static/favicon.svg _site/static/
+          cp static/style.css static/app.js static/platform.js static/favicon.svg _site/static/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

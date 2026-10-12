@@ -551,12 +551,19 @@ a {
   gap: 30px;
   margin-top: 45px;
 }
-.android-link {
-  background: var(--acid);
-  box-shadow: 7px 7px 0 var(--orange);
+.platform-detected {
+  display: inline-flex;
+  gap: 8px;
+  margin: 35px 0 0;
+  padding: 9px 13px;
+  border: 1px solid rgba(243, 240, 232, 0.32);
+  border-radius: 30px;
+  color: rgba(243, 240, 232, 0.62);
+  font: 500 8px var(--mono);
+  letter-spacing: 0.08em;
 }
-.android-link:hover {
-  box-shadow: 11px 11px 0 var(--orange);
+.platform-detected strong {
+  color: var(--acid);
 }
 .primary-link {
   background: var(--orange);
@@ -893,7 +900,7 @@ a {
 /* One-command installer */
 .install-command {
   max-width: 820px;
-  margin-top: 42px;
+  margin-top: 18px;
   border: 1px solid rgba(243, 240, 232, 0.35);
   background: #111;
   box-shadow: 8px 8px 0 rgba(232, 255, 0, 0.16);

@@ -48,6 +48,16 @@ irm https://raw.githubusercontent.com/Gr33nOps/sonkip/main/install.ps1 | iex
 
 This downloads Sonkip without Git, installs it under `%LOCALAPPDATA%\Sonkip`, creates its private Python environment, installs the dependencies, and opens the app. Use `Start Sonkip.cmd` in that folder whenever you want to launch it again.
 
+### One-command macOS / Linux install
+
+Open Terminal and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Gr33nOps/sonkip/main/install.sh | bash
+```
+
+This installs Sonkip under `~/.local/share/sonkip`, creates its private Python environment, installs the dependencies, and opens the app. Run it again later with `~/.local/bin/sonkip`.
+
 ### Manual setup
 
 Download the repository ZIP, extract it, and open a terminal in that folder:

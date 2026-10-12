@@ -662,6 +662,21 @@
     }
   });
 
+  const platformApi = window.SonkipPlatform;
+  if (platformApi) {
+    const detectedPlatform = platformApi.detectPlatform(navigator);
+    const platformDownload = platformApi.getPlatformDownload(detectedPlatform);
+    $("platform-name").textContent = platformDownload.label;
+    $("platform-download").href = platformDownload.href;
+    $("platform-download").innerHTML =
+      `${platformDownload.button} <span>↘</span>`;
+    $("install-command-box").hidden = !platformDownload.command;
+    if (platformDownload.command) {
+      $("install-command-label").textContent = platformDownload.commandLabel;
+      $("install-command").textContent = platformDownload.command;
+    }
+  }
+
   const copyInstallButton = $("copy-install-command");
   if (copyInstallButton) {
     copyInstallButton.addEventListener("click", async () => {

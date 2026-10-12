@@ -17,6 +17,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./static/style.css" />
+    <script src="./static/platform.js" defer></script>
     <script src="./static/app.js" defer></script>
   </head>
   <body>
@@ -148,9 +149,14 @@
           Sonkip installs and runs on your own computer, so your searches and
           music stay yours. No account, cloud library, or Git clone required.
         </p>
-        <div class="install-command">
+        <p class="platform-detected">
+          RECOMMENDED FOR <strong id="platform-name">YOUR DEVICE</strong>
+        </p>
+        <div id="install-command-box" class="install-command">
           <div class="install-command-head">
-            <span>WINDOWS POWERSHELL</span>
+            <span id="install-command-label"
+              >WINDOWS POWERSHELL · ONE-COMMAND SETUP</span
+            >
             <button id="copy-install-command" type="button">
               COPY COMMAND
             </button>
@@ -163,14 +169,10 @@
         </div>
         <div class="install-actions">
           <a
-            href="https://github.com/Gr33nOps/sonkip/releases/download/android-latest/sonkip-android.apk"
-            class="primary-link android-link"
-            >DOWNLOAD ANDROID (.APK) <span>↘</span></a
-          >
-          <a
+            id="platform-download"
             href="https://github.com/Gr33nOps/sonkip/archive/refs/heads/main.zip"
             class="primary-link"
-            >DOWNLOAD DESKTOP (.ZIP) <span>↘</span></a
+            >DOWNLOAD SONKIP (.ZIP) <span>↘</span></a
           ><a href="https://github.com/Gr33nOps/sonkip" class="text-link"
             >VIEW SOURCE ↗</a
           >
