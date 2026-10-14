@@ -18,14 +18,15 @@ from .storage import MusicStore
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 URL_RE = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
 
-# These clients expose ordinary public streams without importing browser
-# cookies. android_vr is the most reliable cookie-free option; web_safari is
-# retained as a fallback for videos which that client doesn't expose.
+# Android does not bundle the desktop browser-based token provider.
 COOKIE_FREE_YOUTUBE_ARGS = {
     "youtube": {"player_client": ["android_vr", "web_safari"]},
 }
 AUTHENTICATED_YOUTUBE_ARGS = {
     "youtube": {"player_client": ["web_safari", "mweb"]},
+}
+DESKTOP_YOUTUBE_ARGS = {
+    "youtube": {"player_client": ["mweb"]},
 }
 
 
@@ -36,9 +37,12 @@ def youtube_access_options(cookiefile: Path | None = None) -> dict[str, Any]:
         return {
             **options,
             "cookiefile": str(cookiefile),
-            "extractor_args": AUTHENTICATED_YOUTUBE_ARGS,
+            "extractor_args": AUTHENTICATED_YOUTUBE_ARGS if runtime else DESKTOP_YOUTUBE_ARGS,
         }
-    return {**options, "extractor_args": COOKIE_FREE_YOUTUBE_ARGS}
+    # mweb exposes direct audio streams with a per-video PO token generated
+    # automatically by the installed local browser provider. Safari may offer
+    # only obsolete direct URLs (403), even when it generates a valid token.
+    return {**options, "extractor_args": COOKIE_FREE_YOUTUBE_ARGS if runtime else DESKTOP_YOUTUBE_ARGS}
 
 
 def get_stream_url(video_id: str, cookiefile: Path | None = None) -> str | None:

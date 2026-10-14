@@ -39,7 +39,7 @@ Download the current APK from the website or the link above, allow installation 
 
 Android 7.0 (API 24) or newer is required. The current APK supports 32-bit and 64-bit ARM devices. Public YouTube tracks use cookie-free playback clients, and completed songs can be exported to the phone's Music folder. For content that legitimately requires the user's account, open **Access** and choose a Netscape-format YouTube `cookies.txt` export; Sonkip stores it in app-private storage and deletes it when **Disconnect** is pressed. Sonkip cannot bypass DRM, private-media permissions, regional blocks, or paywalls.
 
-Desktop installs also include the experimental WebPoClient provider, which can automatically mint current YouTube proof-of-origin tokens using locally installed Chrome or Chromium when yt-dlp requests one. This feature still follows the source's permissions and does not defeat DRM.
+Desktop installs use YouTube's mobile-web client with the WebPoClient provider to automatically generate per-video proof-of-origin tokens using locally installed Chrome or Chromium. A supported browser must be installed; public downloads do not import your browser cookies or require sign-in. This feature still follows the source's permissions and does not defeat DRM. Android uses a separate client configuration and does not bundle this desktop browser provider.
 
 ### One-command Windows install
 

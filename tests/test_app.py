@@ -52,14 +52,6 @@ class FakeYoutubeDL:
         }
         assert download is True
         assert self.opts["format"] == "bestaudio/best[acodec!=none]"
-        if "cookiefile" in self.opts:
-            assert self.opts["extractor_args"] == {
-                "youtube": {"player_client": ["web_safari", "mweb"]}
-            }
-        else:
-            assert self.opts["extractor_args"] == {
-                "youtube": {"player_client": ["android_vr", "web_safari"]}
-            }
         assert "cookiesfrombrowser" not in self.opts
         filename = self.opts["outtmpl"].replace("%(ext)s", "webm")
         from pathlib import Path
@@ -256,6 +248,23 @@ def test_download_retries_public_hls_after_forbidden_stream(monkeypatch, tmp_pat
             self.opts["format"] = "bestaudio/best[acodec!=none]"
             return super().extract_info(url, download)
     monkeypatch.setattr(engine, "YoutubeDL", ForbiddenAudio)
+    manager = engine.DownloadManager(engine.MusicStore(tmp_path))
+    job_id = manager.start(VIDEO_ID)
+    manager.pool.shutdown(wait=True)
+    assert manager.jobs[job_id]["status"] == "complete"
+    assert manager.store.list_tracks()[0]["video_id"] == VIDEO_ID
+
+
+def test_desktop_download_uses_token_capable_mobile_web_client(monkeypatch, tmp_path):
+    class PublicMusicYoutubeDL(FakeYoutubeDL):
+        def extract_info(self, url, download):
+            clients = self.opts["extractor_args"]["youtube"]["player_client"]
+            if "mweb" not in clients:
+                raise RuntimeError("HTTP Error 403: Forbidden")
+            return super().extract_info(url, download)
+
+    monkeypatch.delenv("SONKIP_QUICKJS", raising=False)
+    monkeypatch.setattr(engine, "YoutubeDL", PublicMusicYoutubeDL)
     manager = engine.DownloadManager(engine.MusicStore(tmp_path))
     job_id = manager.start(VIDEO_ID)
     manager.pool.shutdown(wait=True)

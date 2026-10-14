@@ -204,7 +204,7 @@
       <article class="track-item" data-vid="${safe(track.video_id || "")}" data-tid="${safe(track.id || "")}">
         <button
           class="${playClass}"
-          data-play-track="${safe(track.video_id || track.id || "")}"
+          data-play-track="${safe((isLocal ? track.id : track.video_id) || "")}"
           data-is-local="${isLocal ? "1" : "0"}"
           data-title="${safe(track.title)}"
           data-artist="${safe(track.artist)}"
