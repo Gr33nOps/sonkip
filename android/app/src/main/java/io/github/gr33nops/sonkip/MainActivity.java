@@ -132,6 +132,8 @@ public class MainActivity extends Activity {
                     Python.start(new AndroidPlatform(getApplicationContext()));
                 }
                 Python python = Python.getInstance();
+                python.getModule("os").get("environ").callAttr("__setitem__",
+                        "SONKIP_QUICKJS", getApplicationInfo().nativeLibraryDir + "/libqjs.so");
                 PyObject module = python.getModule("app.android_server");
                 File moduleFile = new File(module.get("__file__").toString());
                 File staticDir = new File(moduleFile.getParentFile(), "static");

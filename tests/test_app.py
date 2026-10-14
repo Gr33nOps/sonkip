@@ -34,7 +34,7 @@ class FakeYoutubeDL:
         return False
 
     def extract_info(self, url, download):
-        if url == "https://music.example/playlist/roadtrip":
+        if url == "https://www.youtube.com/playlist?list=PLroadtrip":
             assert download is False
             return {"title": "Road trip", "entries": [
                 {"id": VIDEO_ID, "title": "Sample <Audio>", "uploader": "Example Artist"},
@@ -51,7 +51,7 @@ class FakeYoutubeDL:
             "https://www.youtube.com/watch?v=M7lc1UVf-VE",
         }
         assert download is True
-        assert self.opts["format"] == "bestaudio"
+        assert self.opts["format"] == "bestaudio/best[acodec!=none]"
         if "cookiefile" in self.opts:
             assert self.opts["extractor_args"] == {
                 "youtube": {"player_client": ["web_safari", "mweb"]}
@@ -127,6 +127,27 @@ def test_no_open_host(tmp_path):
         assert res.status_code == 400
 
 
+def test_large_playlist_jobs_remain_available(monkeypatch, tmp_path):
+    from app.storage import MusicStore
+    manager = engine.DownloadManager(MusicStore(tmp_path))
+    # Prevent network work while exercising the real queue and retention.
+    monkeypatch.setattr(manager, "_run", lambda *args: None)
+    jobs = [manager.start(VIDEO_ID) for _ in range(125)]
+    assert len(set(jobs)) == 125
+    for job_id in jobs:
+        manager._update(job_id, status="complete")
+    manager.start(VIDEO_ID)
+    assert all(manager.get_job(job_id)["status"] == "complete" for job_id in jobs)
+    manager.pool.shutdown(wait=True)
+
+
+def test_unsupported_playlist_has_actionable_message(tmp_path):
+    with TestClient(create_app(tmp_path), base_url="http://localhost") as client:
+        result = client.post("/api/playlists", json={"url": "https://open.spotify.com/playlist/example"})
+        assert result.status_code == 422
+        assert "YouTube" in result.json()["detail"]
+
+
 def test_playlist_rejects_non_url_and_empty_playlist(monkeypatch, tmp_path):
     monkeypatch.setattr(engine, "YoutubeDL", FakeYoutubeDL)
     app = create_app(tmp_path)
@@ -138,7 +159,7 @@ def test_playlist_import_queues_every_valid_song(monkeypatch, tmp_path):
     monkeypatch.setattr(engine, "YoutubeDL", FakeYoutubeDL)
     app = create_app(tmp_path)
     with TestClient(app, base_url="http://localhost") as client:
-        playlist = client.post("/api/playlists", json={"url": "https://music.example/playlist/roadtrip"})
+        playlist = client.post("/api/playlists", json={"url": "https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=PLroadtrip"})
         assert playlist.status_code == 202
         payload = playlist.json()
         assert payload["title"] == "Road trip"
@@ -213,5 +234,16 @@ def test_download_uses_connected_youtube_session(monkeypatch, tmp_path):
                 break
             time.sleep(.01)
         assert job["status"] == "complete", job
+
+
+def test_bundled_javascript_runtime_is_used_with_and_without_auth(monkeypatch, tmp_path):
+    runtime = tmp_path / "libqjs.so"
+    runtime.touch()
+    monkeypatch.setenv("SONKIP_QUICKJS", str(runtime))
+    cookies = tmp_path / "cookies.txt"
+    cookies.touch()
+    for cookiefile in (None, cookies):
+        options = engine.youtube_access_options(cookiefile)
+        assert options["js_runtimes"] == {"quickjs": {"path": str(runtime)}}
 
 

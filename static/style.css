@@ -789,6 +789,12 @@ a {
 .toast-error {
   background: var(--orange);
 }
+.track-error {
+  color: #a52b00;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 @media (min-width: 640px) {
   .sm\:inline {
     display: inline !important;

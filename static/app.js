@@ -215,6 +215,7 @@
         <div class="track-info">
           <h2 class="track-title">${safe(track.title)}</h2>
           <p class="track-artist">${safe(track.artist)}${tagHtml}</p>
+          ${job?.status === "error" ? `<p class="track-error">${safe(job.error || "Download failed")}. Use the download button to retry.</p>` : ""}
         </div>
         <div class="track-actions">
           ${dlHtml}
@@ -266,7 +267,7 @@
       ? "PASTE A PLAYLIST LINK"
       : "TYPE A SONG OR ARTIST";
     $("input-hint").textContent = playlistMode
-      ? "WORKS WITH PLAYLIST LINKS SUPPORTED BY THE DOWNLOAD ENGINE"
+      ? "YOUTUBE OR YOUTUBE MUSIC PLAYLIST LINK"
       : "SEARCH BY TITLE, ARTIST, ALBUM, OR VIDEO LINK";
     $("search-input").focus();
   }
@@ -284,7 +285,15 @@
         method: "POST",
         body: JSON.stringify({ url }),
       });
-      state.playlist = { title: data.title, total: data.count, complete: 0 };
+      state.playlist = {
+        title: data.title,
+        total: data.count,
+        complete: 0,
+        failed: 0,
+      };
+      state.currentTab = "search";
+      state.query = url;
+      state.results = data.jobs;
       $("playlist-title").textContent = data.title;
       $("playlist-count").textContent = `0 / ${data.count}`;
       $("playlist-meter-fill").style.width = "12%";
@@ -298,21 +307,31 @@
         });
         pollJob(item.job_id, item.video_id, item.title, true);
       }
+      render();
     } catch (err) {
-      panel.hidden = true;
+      $("playlist-title").textContent = "Playlist could not be loaded";
+      $("playlist-count").textContent = err.message;
+      $("playlist-meter-fill").style.width = "0%";
       showToast(err.message, true);
     }
   }
 
-  function updatePlaylistProgress() {
+  function updatePlaylistProgress(failed = false) {
     if (!state.playlist) return;
     state.playlist.complete += 1;
-    const { complete, total } = state.playlist;
-    $("playlist-count").textContent = `${complete} / ${total}`;
+    if (failed) state.playlist.failed += 1;
+    const { complete, total, failed: failures } = state.playlist;
+    $("playlist-count").textContent =
+      `${complete - failures} saved · ${failures} failed · ${total - complete} remaining`;
     $("playlist-meter-fill").style.width =
       `${Math.round((complete / total) * 100)}%`;
     if (complete === total)
-      showToast(`Playlist saved — all ${total} songs are in your library.`);
+      showToast(
+        failures
+          ? `Playlist finished: ${complete - failures} saved, ${failures} failed. Retry failed tracks below.`
+          : `Playlist saved — all ${total} songs are in your library.`,
+        failures > 0,
+      );
   }
 
   // --- Downloads ---
@@ -346,7 +365,10 @@
   }
 
   function pollJob(jobId, videoId, title, isPlaylist = false) {
+    let polling = false;
     const timer = setInterval(async () => {
+      if (polling) return;
+      polling = true;
       try {
         const job = await api(`/api/jobs/${jobId}`);
         state.activeJobs.set(videoId, job);
@@ -358,7 +380,7 @@
           await loadLibrary();
 
           // Trigger browser file download directly
-          if (job.track_id) {
+          if (job.track_id && !isPlaylist) {
             triggerBrowserDownload(job.track_id);
           }
           render();
@@ -366,14 +388,13 @@
         } else if (job.status === "error") {
           clearInterval(timer);
           showToast(`Download failed: ${job.error || "Unknown error"}`, true);
-          state.activeJobs.delete(videoId);
           render();
-          if (isPlaylist) updatePlaylistProgress();
+          if (isPlaylist) updatePlaylistProgress(true);
         }
       } catch (err) {
-        clearInterval(timer);
-        state.activeJobs.delete(videoId);
-        render();
+        // A temporary connection failure must not abandon a running job.
+      } finally {
+        polling = false;
       }
     }, 1000);
   }
@@ -584,6 +605,9 @@
   searchInput.addEventListener("input", (e) => {
     const val = e.target.value;
     clearTimeout(state.searchTimeout);
+    if (/^https?:\/\//i.test(val.trim()) && /[?&]list=/.test(val)) {
+      setInputMode("playlist");
+    }
     if (state.inputMode === "song")
       state.searchTimeout = setTimeout(() => performSearch(val), 350);
     $("search-clear").hidden = !val;
@@ -700,15 +724,38 @@
   const copyInstallButton = $("copy-install-command");
   if (copyInstallButton) {
     copyInstallButton.addEventListener("click", async () => {
-      const command = $("install-command").textContent.trim();
+      const commandNode = $("install-command");
+      const command = commandNode.textContent.trim();
+      const fallbackCopy = () => {
+        const field = document.createElement("textarea");
+        field.value = command;
+        field.style.position = "fixed";
+        field.style.opacity = "0";
+        document.body.appendChild(field);
+        field.select();
+        let copied = false;
+        try {
+          copied = document.execCommand("copy");
+        } catch {}
+        field.remove();
+        return copied;
+      };
       try {
-        await navigator.clipboard.writeText(command);
+        if (!fallbackCopy()) await navigator.clipboard.writeText(command);
         copyInstallButton.textContent = "COPIED ✓";
         setTimeout(() => {
           copyInstallButton.textContent = "COPY COMMAND";
         }, 1800);
       } catch {
-        window.prompt("Copy this command:", command);
+        const range = document.createRange();
+        range.selectNodeContents(commandNode);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        copyInstallButton.textContent = "SELECTED — COPY MANUALLY";
+        showToast(
+          "Copy is blocked by your browser. The command is selected: press Ctrl+C or long-press and Copy.",
+        );
       }
     });
   }

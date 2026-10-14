@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import re
+import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse, parse_qs
 
 from yt_dlp import YoutubeDL
 
@@ -28,12 +30,15 @@ AUTHENTICATED_YOUTUBE_ARGS = {
 
 
 def youtube_access_options(cookiefile: Path | None = None) -> dict[str, Any]:
+    runtime = os.environ.get("SONKIP_QUICKJS")
+    options = {"js_runtimes": {"quickjs": {"path": runtime}}} if runtime else {}
     if cookiefile and cookiefile.is_file():
         return {
+            **options,
             "cookiefile": str(cookiefile),
             "extractor_args": AUTHENTICATED_YOUTUBE_ARGS,
         }
-    return {"extractor_args": COOKIE_FREE_YOUTUBE_ARGS}
+    return {**options, "extractor_args": COOKIE_FREE_YOUTUBE_ARGS}
 
 
 def get_stream_url(video_id: str, cookiefile: Path | None = None) -> str | None:
@@ -109,27 +114,38 @@ def search_music(query: str, cookiefile: Path | None = None) -> list[dict[str, A
 
 
 def extract_playlist(url: str, cookiefile: Path | None = None) -> dict[str, Any]:
-    """Return downloadable entries from any playlist URL supported by yt-dlp."""
+    """Return video entries from a YouTube or YouTube Music playlist."""
     clean = url.strip()
     if not URL_RE.fullmatch(clean):
         raise ValueError("Enter a valid playlist URL")
+    parsed = urlparse(clean)
+    if parsed.hostname not in ("youtube.com", "www.youtube.com", "music.youtube.com", "m.youtube.com", "youtu.be"):
+        raise ValueError("Paste a YouTube or YouTube Music playlist link. Spotify and Apple Music playlists are not supported yet.")
+    playlist_id = parse_qs(parsed.query).get("list", [None])[0]
+    if not playlist_id:
+        raise ValueError("This link has no playlist. Open the playlist in YouTube, choose Share, and copy its link.")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", playlist_id):
+        raise ValueError("Invalid playlist link")
+    clean = f"https://www.youtube.com/playlist?list={playlist_id}"
     opts = {
         "quiet": True,
         "no_warnings": True,
         "extract_flat": "in_playlist",
         "skip_download": True,
-        "ignoreerrors": True,
+        "ignoreerrors": False,
         "socket_timeout": 30,
         **youtube_access_options(cookiefile),
     }
     with YoutubeDL(opts) as ydl:
         data = ydl.extract_info(clean, download=False)
     entries = []
+    seen = set()
     for item in (data or {}).get("entries") or []:
         if not isinstance(item, dict):
             continue
         video_id = item.get("id")
-        if isinstance(video_id, str) and VIDEO_ID_RE.fullmatch(video_id):
+        if isinstance(video_id, str) and VIDEO_ID_RE.fullmatch(video_id) and video_id not in seen:
+            seen.add(video_id)
             entries.append({
                 "video_id": video_id,
                 "title": str(item.get("title") or "Untitled"),
@@ -166,14 +182,8 @@ class DownloadManager:
             raise ValueError("Invalid video ID")
         job_id = uuid.uuid4().hex
         with self.lock:
-            # Keep only the most recent completed/failed tasks in memory.
-            for key, job in list(self.jobs.items()):
-                if len(self.jobs) < 60:
-                    break
-                if job["status"] in ("complete", "error"):
-                    del self.jobs[key]
-            if len(self.jobs) >= 60:
-                raise RuntimeError("Too many active jobs; retry later")
+            # Keep terminal jobs for the lifetime of the process so playlist
+            # clients can poll every result, including large batches.
             self.jobs[job_id] = {
                 "id": job_id,
                 "video_id": video_id,
@@ -203,7 +213,10 @@ class DownloadManager:
 
         try:
             opts = {
-                "format": "bestaudio",  # never transcode or downgrade the audio
+                # Some public clients expose only combined audio/video. Keep
+                # that original file rather than failing or requiring FFmpeg.
+                "format": "bestaudio/best[acodec!=none]",
+                "hls_prefer_native": True,
                 "outtmpl": str(self.store.tracks_dir / f"{job_id}.%(ext)s"),
                 "noplaylist": True,
                 "quiet": True,

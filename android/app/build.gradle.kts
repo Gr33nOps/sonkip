@@ -9,12 +9,21 @@ android {
     namespace = "io.github.gr33nops.sonkip"
     compileSdk = 35
 
+    packaging {
+        jniLibs.useLegacyPackaging = true
+        jniLibs.keepDebugSymbols += "**/libqjs.so"
+    }
+    sourceSets.getByName("main") {
+        jniLibs.srcDir(layout.buildDirectory.dir("generated/runtime"))
+        assets.srcDir(layout.buildDirectory.dir("generated/runtimeLicenses"))
+    }
+
     defaultConfig {
         applicationId = "io.github.gr33nops.sonkip"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.2.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -47,8 +56,10 @@ val syncSonkipPython by tasks.registering(Sync::class) {
 chaquopy {
     defaultConfig {
         version = "3.10"
+        System.getenv("SONKIP_BUILD_PYTHON")?.let { buildPython(it) }
         pip {
-            install("yt-dlp>=2025.11.12")
+            install("yt-dlp==2026.8.19")
+            install("yt-dlp-ejs==0.8.0")
         }
     }
     sourceSets {
@@ -60,6 +71,13 @@ chaquopy {
 
 tasks.named("preBuild").configure {
     dependsOn(syncSonkipPython)
+    doFirst {
+        for (abi in listOf("arm64-v8a", "armeabi-v7a")) {
+            check(layout.buildDirectory.file("generated/runtime/$abi/libqjs.so").get().asFile.isFile) {
+                "Missing QuickJS runtime. Run python android/build_runtime.py from the repository root first."
+            }
+        }
+    }
 }
 
 tasks.matching {

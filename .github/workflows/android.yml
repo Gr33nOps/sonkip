@@ -36,6 +36,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
+      - name: Build bundled JavaScript runtime
+        run: |
+          sdkmanager "ndk;28.2.13676358"
+          python android/build_runtime.py
       - name: Build installable APK
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon

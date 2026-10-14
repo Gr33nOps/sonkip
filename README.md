@@ -13,8 +13,8 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 ## Features
 
 - Search YouTube by title, artist, or album.
-- Paste a playlist URL supported by yt-dlp to queue every valid song, with batch progress and no fixed playlist-size limit imposed by sonkip.
-- Download the best **audio-only** source format with `yt-dlp` (`bestaudio`). No re-encoding to MP3/FLAC, so no avoidable quality loss.
+- Paste a public YouTube or YouTube Music playlist URL to queue its available tracks. Spotify and Apple Music playlist imports are not supported. Batch progress shows saved and failed tracks separately.
+- Prefer the best **audio-only** source format, falling back to a combined audio/video file when necessary. No re-encoding to MP3/FLAC.
 - Download progress, speed and estimated time; up to two concurrent downloads.
 - SQLite library persisted between restarts; offline playback, file export and deletion.
 - Responsive animated UI with no frontend build tools, tracking cookies, analytics, or CDN JavaScript.
@@ -26,7 +26,7 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 ## Requirements
 
 - Python **3.10+**
-- [Deno](https://docs.deno.com/runtime/getting_started/installation/) **2.3+**, on PATH (recommended for yt-dlp's YouTube JavaScript challenges)
+- Deno is installed into the private Python environment by the desktop installer for YouTube JavaScript challenges.
 - Optional: [FFmpeg](https://ffmpeg.org/download.html) on PATH (helpful for certain audio containers; normal single-stream original-audio downloads do not need transcoding)
 
 Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which is installed by the `yt-dlp[default]` dependency in this project. See the [yt-dlp EJS guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
@@ -35,7 +35,7 @@ Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which 
 
 ### Android
 
-Download the current APK from the website or the link above, allow installation from your browser when Android asks, and open Sonkip. The APK bundles its own Python runtime and runs the same interface and download engine entirely on `127.0.0.1`. Its music library is stored in Android app-private storage and is removed if the app is uninstalled.
+Download the current APK from the website or the link above, allow installation from your browser when Android asks, and open Sonkip. The APK bundles Python, QuickJS-NG, and yt-dlp's EJS scripts, and runs its interface and download engine on `127.0.0.1`. Its music library is stored in Android app-private storage and is removed if the app is uninstalled. Playlist downloads stay in **Saved**; export individual files from there instead of triggering a browser download for every track.
 
 Android 7.0 (API 24) or newer is required. The current APK supports 32-bit and 64-bit ARM devices. Public YouTube tracks use cookie-free playback clients, and completed songs can be exported to the phone's Music folder. For content that legitimately requires the user's account, open **Access** and choose a Netscape-format YouTube `cookies.txt` export; Sonkip stores it in app-private storage and deletes it when **Disconnect** is pressed. Sonkip cannot bypass DRM, private-media permissions, regional blocks, or paywalls.
 
@@ -142,6 +142,10 @@ pytest -q
 ```
 
 Tests use a temporary library and do not call YouTube.
+
+### Building Android
+
+Install Java 17, Gradle 8.13, Android SDK 35, NDK `28.2.13676358`, CMake and Ninja. Set `ANDROID_HOME` to the SDK folder. Run `python android/build_runtime.py` from the repository root, then `gradle -p android :app:assembleDebug`. The runtime build downloads checksum-pinned QuickJS-NG source and builds both ARM ABIs; its license is included in the APK. GitHub Actions performs these steps automatically.
 
 ## Limitations / future work
 
