@@ -229,8 +229,26 @@ class DownloadManager:
                 "overwrites": False,
                 **youtube_access_options(self.store.youtube_cookies_path),
             }
-            with YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+            try:
+                with YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+            except Exception as first_error:
+                if "403" not in str(first_error):
+                    raise
+                # A listed direct stream can expire or reject this client while
+                # the same video's public HLS stream is still available.
+                for partial in self.store.tracks_dir.glob(job_id + ".*"):
+                    if partial.is_file():
+                        partial.unlink()
+                self._update(job_id, status="starting", percent=0)
+                try:
+                    with YoutubeDL({**opts, "format": "best[protocol^=m3u8][acodec!=none]"}) as ydl:
+                        info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+                except Exception:
+                    raise RuntimeError(
+                        "YouTube rejected this download and no working public alternative was available. "
+                        "Try again later, or use Access for media your account is allowed to download."
+                    ) from first_error
             if not info:
                 raise RuntimeError("No audio information was returned")
 

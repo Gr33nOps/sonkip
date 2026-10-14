@@ -247,3 +247,19 @@ def test_bundled_javascript_runtime_is_used_with_and_without_auth(monkeypatch, t
         assert options["js_runtimes"] == {"quickjs": {"path": str(runtime)}}
 
 
+def test_download_retries_public_hls_after_forbidden_stream(monkeypatch, tmp_path):
+    class ForbiddenAudio(FakeYoutubeDL):
+        def extract_info(self, url, download):
+            if self.opts["format"] == "bestaudio/best[acodec!=none]":
+                raise RuntimeError("HTTP Error 403: Forbidden")
+            assert self.opts["format"] == "best[protocol^=m3u8][acodec!=none]"
+            self.opts["format"] = "bestaudio/best[acodec!=none]"
+            return super().extract_info(url, download)
+    monkeypatch.setattr(engine, "YoutubeDL", ForbiddenAudio)
+    manager = engine.DownloadManager(engine.MusicStore(tmp_path))
+    job_id = manager.start(VIDEO_ID)
+    manager.pool.shutdown(wait=True)
+    assert manager.jobs[job_id]["status"] == "complete"
+    assert manager.store.list_tracks()[0]["video_id"] == VIDEO_ID
+
+
