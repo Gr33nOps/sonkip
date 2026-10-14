@@ -726,22 +726,10 @@
     copyInstallButton.addEventListener("click", async () => {
       const commandNode = $("install-command");
       const command = commandNode.textContent.trim();
-      const fallbackCopy = () => {
-        const field = document.createElement("textarea");
-        field.value = command;
-        field.style.position = "fixed";
-        field.style.opacity = "0";
-        document.body.appendChild(field);
-        field.select();
-        let copied = false;
-        try {
-          copied = document.execCommand("copy");
-        } catch {}
-        field.remove();
-        return copied;
-      };
       try {
-        if (!fallbackCopy()) await navigator.clipboard.writeText(command);
+        // Legacy execCommand can report success without updating the system
+        // clipboard in embedded browsers. Never use that as proof of copying.
+        await navigator.clipboard.writeText(command);
         copyInstallButton.textContent = "COPIED ✓";
         setTimeout(() => {
           copyInstallButton.textContent = "COPY COMMAND";
