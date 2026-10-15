@@ -248,7 +248,9 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
             else:
                 self._json(
                     HTTPStatus.ACCEPTED,
-                    {"title": playlist["title"], "count": len(jobs), "jobs": jobs},
+                    {"title": playlist["title"], "count": len(jobs), "jobs": jobs,
+                     "unmatched": playlist.get("unmatched", []), "notice": playlist.get("notice", ""),
+                     "source_count": playlist.get("source_count", len(jobs))},
                 )
             return
         self._json(HTTPStatus.NOT_FOUND, {"detail": "Not found"})

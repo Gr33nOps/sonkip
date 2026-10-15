@@ -5,6 +5,9 @@ import re
 import os
 import threading
 import uuid
+import json
+import unicodedata
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +36,12 @@ DESKTOP_YOUTUBE_ARGS = {
 def youtube_access_options(cookiefile: Path | None = None) -> dict[str, Any]:
     runtime = os.environ.get("SONKIP_QUICKJS")
     options = {"js_runtimes": {"quickjs": {"path": runtime}}} if runtime else {}
+    if os.environ.get("SONKIP_ANDROID_TOKENS") == "1":
+        return {
+            **options,
+            **({"cookiefile": str(cookiefile)} if cookiefile and cookiefile.is_file() else {}),
+            "extractor_args": DESKTOP_YOUTUBE_ARGS,
+        }
     if cookiefile and cookiefile.is_file():
         return {
             **options,
@@ -123,8 +132,10 @@ def extract_playlist(url: str, cookiefile: Path | None = None) -> dict[str, Any]
     if not URL_RE.fullmatch(clean):
         raise ValueError("Enter a valid playlist URL")
     parsed = urlparse(clean)
+    if parsed.hostname in ('open.spotify.com', 'soundcloud.com', 'www.soundcloud.com'):
+        return _import_playlist(parsed, cookiefile)
     if parsed.hostname not in ("youtube.com", "www.youtube.com", "music.youtube.com", "m.youtube.com", "youtu.be"):
-        raise ValueError("Paste a YouTube or YouTube Music playlist link. Spotify and Apple Music playlists are not supported yet.")
+        raise ValueError("Use a public YouTube, Spotify, or SoundCloud playlist link. Other services are not supported yet.")
     playlist_id = parse_qs(parsed.query).get("list", [None])[0]
     if not playlist_id:
         raise ValueError("This link has no playlist. Open the playlist in YouTube, choose Share, and copy its link.")
@@ -158,6 +169,82 @@ def extract_playlist(url: str, cookiefile: Path | None = None) -> dict[str, Any]
     if not entries:
         raise ValueError("No downloadable songs were found in that playlist")
     return {"title": str((data or {}).get("title") or "Playlist"), "entries": entries}
+
+
+def _words(value: str) -> set[str]:
+    return set(re.findall(r'\w+', unicodedata.normalize('NFKC', value).casefold()))
+
+
+def _match_track(track: dict, cookiefile: Path | None) -> dict | None:
+    candidates = search_music(f"{track['artist']} {track['title']}", cookiefile)
+    title_words, artist_words = _words(track['title']), _words(track['artist'])
+    versions = {'live', 'cover', 'remix', 'slowed', 'instrumental', 'karaoke', 'nightcore', 'demo', 'sped'}
+    best, best_score = None, 0
+    for candidate in candidates:
+        words = _words(candidate['title'])
+        if (words & versions) - (title_words & versions):
+            continue
+        title_score = len(title_words & words) / max(1, len(title_words))
+        artist_score = len(artist_words & (words | _words(candidate['artist']))) / max(1, len(artist_words))
+        if title_score < .8 or artist_score < .5:
+            continue
+        expected, actual = track.get('duration'), candidate.get('duration')
+        if expected and actual and abs(expected - actual) > max(25, expected * .15):
+            continue
+        score = title_score + artist_score
+        if score > best_score:
+            best, best_score = candidate, score
+    return best
+
+
+def _import_playlist(parsed, cookiefile: Path | None) -> dict:
+    if parsed.scheme != 'https' or parsed.username or parsed.port not in (None, 443):
+        raise ValueError('Use the HTTPS playlist link from the music service')
+    if parsed.hostname == 'open.spotify.com':
+        match = re.fullmatch(r'/(?:intl-[a-z]+/)?(playlist|album)/([A-Za-z0-9]{22})/?', parsed.path)
+        if not match:
+            raise ValueError('Paste a public Spotify playlist or album link')
+        url = f'https://open.spotify.com/embed/{match[1]}/{match[2]}'
+        with urllib.request.urlopen(url, timeout=30) as response:
+            html = response.read(8 * 1024 * 1024).decode('utf-8')
+        payload = re.search(r'<script\b[^>]*\bid="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+        if not payload:
+            raise ValueError('Spotify did not expose this playlist. Check that it is public.')
+        entity = json.loads(payload[1]).get('props', {}).get('pageProps', {}).get('state', {}).get('data', {}).get('entity', {})
+        source, title = 'Spotify', entity.get('name') or 'Spotify playlist'
+        tracks = [{'title': t['title'], 'artist': t['subtitle'], 'duration': t.get('duration', 0) / 1000}
+                  for t in entity.get('trackList', []) if t.get('title') and t.get('subtitle')]
+        note = 'Spotify imports the tracks exposed by its public embed; large playlists may be incomplete.'
+    else:
+        if not re.fullmatch(r'/[\w-]+/sets/[\w-]+/?', parsed.path):
+            raise ValueError('Paste a public SoundCloud set or album link')
+        with YoutubeDL({'quiet': True, 'no_warnings': True, 'skip_download': True,
+                        'socket_timeout': 25, 'extract_flat': False, 'ignoreerrors': False}) as ydl:
+            data = ydl.extract_info('https://soundcloud.com' + parsed.path, download=False)
+        source, title = 'SoundCloud', data.get('title') or 'SoundCloud playlist'
+        # SoundCloud may report a 30-second preview duration, not the full song.
+        tracks = [{'title': t.get('track') or t['title'], 'artist': t.get('artist') or t.get('uploader') or ''}
+                  for t in data.get('entries', []) if t and t.get('title')]
+        note = 'SoundCloud supplies track names only; audio is matched on YouTube.'
+    if not tracks:
+        raise ValueError('No public track names were found in this playlist')
+    def match_one(track):
+        try:
+            found = _match_track(track, cookiefile)
+            return ({**found, 'matched_from': source, 'source_title': track['title']} if found else None,
+                    {**track, 'reason': 'No close YouTube match found'})
+        except Exception:
+            return None, {**track, 'reason': 'YouTube search failed; try importing again'}
+    # Initialize yt-dlp's global plugin registry before concurrent searches.
+    matches = [match_one(tracks[0])]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        matches.extend(pool.map(match_one, tracks[1:]))
+    entries = [found for found, _ in matches if found]
+    unmatched = [missing for found, missing in matches if not found]
+    if not entries:
+        raise ValueError('No close YouTube matches were found. Try searching for a song by title and artist.')
+    return {'title': title, 'entries': entries, 'unmatched': unmatched, 'source_count': len(tracks),
+            'source': source, 'notice': note + ' Matches may be different uploads or editions.'}
 
 
 class DownloadManager:
@@ -216,6 +303,11 @@ class DownloadManager:
                              speed=info.get("speed"), eta=info.get("eta"))
 
         try:
+            if os.environ.get("SONKIP_ANDROID_TOKENS") == "1":
+                # Fail before extraction, rather than repeating a failed browser
+                # startup for every token context and leaving jobs "starting".
+                from java import jclass
+                jclass("io.github.gr33nops.sonkip.PublicTokenProvider").awaitReady()
             opts = {
                 # Some public clients expose only combined audio/video. Keep
                 # that original file rather than failing or requiring FFmpeg.

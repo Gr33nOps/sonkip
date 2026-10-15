@@ -118,7 +118,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Playlist provider unavailable: {str(exc)[:220]}") from exc
-        return {"title": playlist["title"], "count": len(jobs), "jobs": jobs}
+        return {"title": playlist["title"], "count": len(jobs), "jobs": jobs,
+                "unmatched": playlist.get("unmatched", []), "notice": playlist.get("notice", ""),
+                "source_count": playlist.get("source_count", len(jobs))}
 
     @app.get("/api/jobs")
     def list_jobs():

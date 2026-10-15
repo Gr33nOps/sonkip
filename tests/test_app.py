@@ -92,7 +92,7 @@ def test_end_to_end_local_download(monkeypatch, tmp_path):
         assert len(library) == 1
         assert library[0]["codec"] == "opus"
         assert library[0]["extension"] == "webm"
-        assert library[0]["filename"] == job_id + ".webm"
+        assert library[0]["filename"] == "Example Artist - Sample _Audio_.webm"
         assert client.get(f"/api/tracks/{job_id}/audio").content.startswith(b"OggS")
         file_resp = client.get(f"/api/tracks/{job_id}/file")
         assert file_resp.status_code == 200
@@ -135,7 +135,7 @@ def test_large_playlist_jobs_remain_available(monkeypatch, tmp_path):
 
 def test_unsupported_playlist_has_actionable_message(tmp_path):
     with TestClient(create_app(tmp_path), base_url="http://localhost") as client:
-        result = client.post("/api/playlists", json={"url": "https://open.spotify.com/playlist/example"})
+        result = client.post("/api/playlists", json={"url": "https://example.com/playlist/example"})
         assert result.status_code == 422
         assert "YouTube" in result.json()["detail"]
 

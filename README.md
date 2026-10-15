@@ -1,19 +1,17 @@
-# sonkip. — Find it. Save it. Play it.
+# sonkip.
 
-An open-source **local-only web app** for finding tracks or importing playlists, downloading permitted audio in the **best original format offered by the source**, and maintaining an offline music library. No account, remote application server, analytics, or JavaScript framework is required.
+### Find it. Save it. Play it.
 
-**Website:** https://gr33nops.github.io/sonkip/
+Save public YouTube songs and playlists on your own device. Sonkip runs as a native Android app or a local website on Windows, macOS, and Linux. Your library stays on your device; Sonkip has no accounts or analytics.
 
-**Android APK:** https://github.com/Gr33nOps/sonkip/releases/download/android-latest/sonkip-android.apk
+[Website](https://gr33nops.github.io/sonkip/) · [Android releases](https://github.com/Gr33nOps/sonkip/releases) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
 The GitHub Pages site is a static project page. The downloader intentionally runs on your own computer so searches, audio files, and library data are never sent to a sonkip server.
-
-![Stack](https://img.shields.io/badge/Stack-FastAPI%20%2B%20vanilla%20JS-8fddad)
 
 ## Features
 
 - Search YouTube by title, artist, or album.
-- Paste a public YouTube or YouTube Music playlist URL to queue its available tracks. Spotify and Apple Music playlist imports are not supported. Batch progress shows saved and failed tracks separately.
+- Paste a public YouTube playlist, Spotify playlist/album, or SoundCloud set. Spotify and SoundCloud provide track names; Sonkip matches those tracks on YouTube and downloads from there. Unmatched tracks are counted separately. Apple Music and other services are not supported yet.
 - Prefer the best **audio-only** source format, falling back to a combined audio/video file when necessary. No re-encoding to MP3/FLAC.
 - Download progress, speed and estimated time; up to two concurrent downloads.
 - SQLite library persisted between restarts; offline playback, file export and deletion.
@@ -35,11 +33,15 @@ Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which 
 
 ### Android
 
-Download the current APK from the website or the link above, allow installation from your browser when Android asks, and open Sonkip. The APK bundles Python, QuickJS-NG, and yt-dlp's EJS scripts, and runs its interface and download engine on `127.0.0.1`. Its music library is stored in Android app-private storage and is removed if the app is uninstalled. Playlist downloads stay in **Saved**; export individual files from there instead of triggering a browser download for every track.
+Download an APK from Releases, install it, and open Sonkip. Use Find to search or paste a playlist, Downloads to check progress, and Library to play or export songs. Version 2.1 adds background playback and downloads using Android foreground services. Allow notifications to see download progress; playback controls are available in the notification and on the lock screen. Switching apps does not pause music.
 
-Android 7.0 (API 24) or newer is required. The current APK supports 32-bit and 64-bit ARM devices. Public YouTube tracks use cookie-free playback clients, and completed songs can be exported to the phone's Music folder. For content that legitimately requires the user's account, open **Access** and choose a Netscape-format YouTube `cookies.txt` export; Sonkip stores it in app-private storage and deletes it when **Disconnect** is pressed. Sonkip cannot bypass DRM, private-media permissions, regional blocks, or paywalls.
+Force-stopping Sonkip or restarting the phone stops active work; unfinished jobs do not resume automatically. Android 15 limits background data-sync time to six hours per day. Some manufacturers apply additional battery restrictions; if downloads stop while the screen is off, check Sonkip's battery settings. Sonkip does not change those settings automatically.
 
-Desktop installs use YouTube's mobile-web client with the WebPoClient provider to automatically generate per-video proof-of-origin tokens using locally installed Chrome or Chromium. A supported browser must be installed; public downloads do not import your browser cookies or require sign-in. This feature still follows the source's permissions and does not defeat DRM. Android uses a separate client configuration and does not bundle this desktop browser provider.
+Android 7.0 or newer on a 32-bit or 64-bit ARM device is required. Songs are stored in app-private storage. Export files you want to keep elsewhere before uninstalling. Install updates over the existing app to preserve your library. The native app does not currently offer account authentication.
+
+Public downloads use locally generated proof-of-origin tokens. Desktop uses Chrome or Chromium; Android uses an internal WebView behind its native interface. No cookie import is needed for public tracks. Private, restricted, unavailable, or DRM-protected media may still fail.
+
+Matching a playlist can take a minute or more before downloads begin. Spotify's public embed can expose only part of a large playlist; Sonkip reports the number of tracks it could read, not a guaranteed full playlist count. Matches may be different uploads or editions. Sonkip skips candidates with clearly different titles, artists, or versions instead of downloading the first search result.
 
 ### One-command Windows install
 
@@ -98,7 +100,7 @@ sonkip-local/
 │   ├── main.py          # HTTP API and secure local file serving
 │   ├── engine.py        # Search, audio downloader, jobs and progress
 │   └── storage.py       # Persistent SQLite library
-├── android/              # Native WebView + embedded Python APK project
+├── android/              # Native Android UI and embedded Python engine
 ├── static/
 │   ├── index.html       # UI
 │   ├── style.css        # Responsive styling
@@ -117,6 +119,8 @@ sonkip-local/
 Default local storage: `~/Music/Sonkip/tracks/` with SQLite at `~/Music/Sonkip/library.sqlite3`. Existing `~/Music/Sonora` libraries are detected automatically. Override with environment variable `LOCALMUSIC_HOME` (an absolute directory is recommended).
 
 All saved state is local to that folder. sonkip has no user accounts, telemetry, hosted database, or cloud library.
+
+Audio files use `Artist - Song title.ext` names. Duplicate names get a number, and older ID-named library files are renamed from their saved metadata when the app starts. The source format is preserved: `.webm` can contain audio only, even if Windows labels it a video file.
 
 Routes:
 

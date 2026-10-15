@@ -267,7 +267,7 @@
       ? "PASTE A PLAYLIST LINK"
       : "TYPE A SONG OR ARTIST";
     $("input-hint").textContent = playlistMode
-      ? "YOUTUBE OR YOUTUBE MUSIC PLAYLIST LINK"
+      ? "YOUTUBE, SPOTIFY, OR SOUNDCLOUD · AUDIO MATCHED ON YOUTUBE"
       : "SEARCH BY TITLE, ARTIST, ALBUM, OR VIDEO LINK";
     $("search-input").focus();
   }
@@ -277,7 +277,7 @@
     if (!url) return;
     const panel = $("playlist-progress");
     panel.hidden = false;
-    $("playlist-title").textContent = "Reading playlist…";
+    $("playlist-title").textContent = "Reading playlist and finding YouTube matches…";
     $("playlist-count").textContent = "—";
     $("playlist-meter-fill").style.width = "8%";
     try {
@@ -294,7 +294,7 @@
       state.currentTab = "search";
       state.query = url;
       state.results = data.jobs;
-      $("playlist-title").textContent = data.title;
+      $("playlist-title").textContent = data.title + (data.notice ? ` · ${data.count} matched / ${data.source_count} listed. ${data.unmatched.length} skipped. ${data.notice}` : "");
       $("playlist-count").textContent = `0 / ${data.count}`;
       $("playlist-meter-fill").style.width = "12%";
       showToast(`${data.count} songs queued from ${data.title}`);
@@ -605,7 +605,7 @@
   searchInput.addEventListener("input", (e) => {
     const val = e.target.value;
     clearTimeout(state.searchTimeout);
-    if (/^https?:\/\//i.test(val.trim()) && /[?&]list=/.test(val)) {
+    if (/^https?:\/\//i.test(val.trim()) && (/[?&]list=/.test(val) || /^https:\/\/(open\.spotify\.com\/(?:intl-[a-z]+\/)?(?:playlist|album)\/|(?:www\.)?soundcloud\.com\/[^/]+\/sets\/)/i.test(val.trim()))) {
       setInputMode("playlist");
     }
     if (state.inputMode === "song")

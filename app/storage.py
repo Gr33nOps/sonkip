@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+import os
+import shutil
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -32,6 +34,9 @@ class MusicStore:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+        for track in self.list_tracks():
+            if FILENAME_RE.fullmatch(track['filename']):
+                self._name_audio(track)
 
     def youtube_auth_connected(self) -> bool:
         return self.youtube_cookies_path.is_file()
@@ -78,9 +83,49 @@ class MusicStore:
 
     def path_for(self, track: dict[str, Any]) -> Path:
         filename = track["filename"]
-        if not FILENAME_RE.fullmatch(filename):
+        if not isinstance(filename, str) or not filename or re.search(r'[\\/:\x00-\x1f]', filename) or filename in ('.', '..'):
             raise ValueError("Invalid stored audio filename")
-        return self.tracks_dir / filename
+        path = self.tracks_dir / filename
+        if path.resolve().parent != self.tracks_dir.resolve():
+            raise ValueError("Audio file is outside the library")
+        return path
+
+    def _name_audio(self, track: dict[str, Any]) -> None:
+        source = self.path_for(track)
+        if not source.is_file():
+            return
+        title = str(track.get('title') or 'Untitled')
+        artist = str(track.get('artist') or 'Unknown artist')
+        stem = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', '_', artist + ' - ' + title)
+        stem = ' '.join(stem.split()).strip(' .')
+        stem = stem.encode('utf-8')[:170].decode('utf-8', errors='ignore').rstrip(' .') or 'Untitled'
+        target = None
+        try:
+            with self._connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                number = 1
+                while True:
+                    suffix = '' if number == 1 else f' ({number})'
+                    candidate = self.tracks_dir / (stem + suffix + source.suffix.lower())
+                    try:
+                        # Exclusive creation prevents overwriting another song.
+                        with candidate.open('xb') as output:
+                            target = candidate
+                            with source.open('rb') as original:
+                                shutil.copyfileobj(original, output, 1024 * 1024)
+                            output.flush()
+                            os.fsync(output.fileno())
+                        break
+                    except FileExistsError:
+                        number += 1
+                db.execute('UPDATE tracks SET filename = ? WHERE id = ?', (target.name, track['id']))
+        except Exception:
+            if target is not None:
+                target.unlink(missing_ok=True)
+            raise
+        # The database commit precedes removal, so a failed commit keeps the old file.
+        source.unlink()
+        track['filename'] = target.name
 
     def add_track(self, track: dict[str, Any]) -> None:
         fields = ("id", "video_id", "title", "artist", "duration", "filename", "bytes", "extension", "codec", "abr")
@@ -89,6 +134,7 @@ class MusicStore:
                 f"INSERT INTO tracks ({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
                 tuple(track.get(f) for f in fields),
             )
+        self._name_audio(track)
 
     def delete_track(self, track_id: str) -> bool:
         track = self.get_track(track_id)

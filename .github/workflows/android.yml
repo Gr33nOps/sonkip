@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: android-apk
@@ -46,7 +46,9 @@ jobs:
           python android/build_runtime.py
       - name: Build installable APK
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon
+        run: gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+      - name: Verify token and website interactions
+        run: node --test tests/*.test.cjs
       - name: Verify APK signature
         run: |
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
@@ -57,15 +59,5 @@ jobs:
         with:
           name: sonkip-android
           path: sonkip-android.apk
-      - name: Publish Android download
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view android-latest >/dev/null 2>&1; then
-            gh release upload android-latest sonkip-android.apk --clobber
-          else
-            gh release create android-latest sonkip-android.apk \
-              --title "Sonkip for Android" \
-              --notes "Installable Android APK. Sonkip runs locally on your device and stores its library in app-private storage." \
-              --latest=false
-          fi
+      # Build artifacts are not releases. Publish only the exact APK which has
+      # passed the real-device playlist download and playback checks.
