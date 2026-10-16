@@ -39,6 +39,10 @@ Force-stopping Sonkip or restarting the phone stops active work; unfinished jobs
 
 Android 7.0 or newer on a 32-bit or 64-bit ARM device is required. Songs are stored in app-private storage. Export files you want to keep elsewhere before uninstalling. Install updates over the existing app to preserve your library. The native app does not currently offer account authentication.
 
+In Library, **Play all** plays songs in download order (oldest first); **Shuffle** plays each song once in a random order. The player and notification have Previous and Next controls, and playback advances automatically when a song ends. Previous restarts the current song after three seconds, otherwise it goes to the preceding song.
+
+Use **My playlists → Create playlist** to choose saved songs. You can also use a song's **More → Add to playlist** menu. Each playlist supports Play, Shuffle, song selection, rename, and delete. Deleting a playlist leaves its audio files in Library. Playlists are saved locally and survive updates; the active playback queue is temporary.
+
 Public downloads use locally generated proof-of-origin tokens. Desktop uses Chrome or Chromium; Android uses an internal WebView behind its native interface. No cookie import is needed for public tracks. Private, restricted, unavailable, or DRM-protected media may still fail.
 
 Matching a playlist can take a minute or more before downloads begin. Spotify's public embed can expose only part of a large playlist; Sonkip reports the number of tracks it could read, not a guaranteed full playlist count. Matches may be different uploads or editions. Sonkip skips candidates with clearly different titles, artists, or versions instead of downloading the first search result.

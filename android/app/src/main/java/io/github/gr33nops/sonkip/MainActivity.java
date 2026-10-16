@@ -37,9 +37,11 @@ public class MainActivity extends Activity {
     private JSONArray tracks = new JSONArray();
     private boolean ready, active, importing;
     private String exportId;
+    private PlaylistStore playlists;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        playlists=new PlaylistStore(this);
         ui = new NativeUi(this, this::action);
         setContentView(ui);
         ui.setOnApplyWindowInsetsListener((view,insets) -> {
@@ -118,10 +120,18 @@ public class MainActivity extends Activity {
                 case "search": find(value); break;
                 case "save": save(value); break;
                 case "play": play(value); break;
+                case "play-all": PlaybackService.playQueue(this,tracks,false,true);break;
+                case "shuffle-all": PlaybackService.playQueue(this,tracks,true,true);break;
+                case "playlists": showPlaylists(null);break;
+                case "next": if(PlaybackService.current!=null)PlaybackService.current.next();break;
+                case "previous": if(PlaybackService.current!=null)PlaybackService.current.previous();break;
                 case "toggle": if(PlaybackService.current!=null) {PlaybackService.current.toggle();updatePlayer();} break;
                 case "seek": if(PlaybackService.current!=null)PlaybackService.current.seek(Integer.parseInt(value)); break;
                 case "export": export(value); break;
-                case "more": confirmDelete(value); break;
+                case "more": new AlertDialog.Builder(this).setTitle(track(value).optString("title"))
+                    .setItems(new String[]{"Add to playlist","Remove from library"},(d,which)->playlistAction(()->{
+                        if(which==0)showPlaylists(value);else confirmDelete(value);
+                    })).show();break;
             }
         } catch(Exception error) {ui.notice(error.getMessage(),true);}
     }
@@ -179,9 +189,61 @@ public class MainActivity extends Activity {
     }
     private void updatePlayer() {
         PlaybackService service=PlaybackService.current;
+        if(service!=null)ui.queueDescription(service.queueDescription());
         if(service!=null && service.isPrepared())ui.playback(service.title,service.isPlaying(),service.position(),service.duration());
         else ui.hidePlayer();
         if(PlaybackService.error!=null){ui.notice(PlaybackService.error,true);PlaybackService.error=null;}
+    }
+    private interface PlaylistAction {void run()throws Exception;}
+    private void playlistAction(PlaylistAction action){try{action.run();}catch(Exception e){ui.notice(e.getMessage(),true);}}
+    private void showPlaylists(String addSong)throws Exception {
+        JSONArray lists=playlists.list();String[] names=new String[lists.length()+1];names[0]="+ Create playlist";
+        for(int i=0;i<lists.length();i++)names[i+1]=lists.getJSONObject(i).getString("name")+" · "+playlists.resolve(lists.getJSONObject(i).getString("id"),tracks).length()+" songs";
+        new AlertDialog.Builder(this).setTitle(addSong==null?"My playlists":"Add to playlist").setItems(names,(d,which)->playlistAction(()->{
+            if(which==0){namePlaylist(null,addSong);return;}
+            JSONObject list=lists.getJSONObject(which-1);String id=list.getString("id");
+            if(addSong!=null){playlists.save(id,list.getString("name"),list.getJSONArray("tracks").put(addSong));ui.notice("Added to "+list.getString("name"),false);}
+            else openPlaylist(id);
+        })).setNegativeButton("Close",null).show();
+    }
+    private void namePlaylist(String id,String addSong)throws Exception {
+        android.widget.EditText name=new android.widget.EditText(this);name.setSingleLine(true);name.setHint("Playlist name");
+        name.setContentDescription("Playlist name");
+        if(id!=null)name.setText(playlists.get(id).getString("name"));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(id==null?"Create playlist":"Rename playlist").setView(name)
+            .setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            try {
+                JSONArray ids=id==null?new JSONArray():playlists.get(id).getJSONArray("tracks");if(addSong!=null)ids.put(addSong);
+                String saved=playlists.save(id,name.getText().toString(),ids);dialog.dismiss();
+                if(id==null && addSong==null)editPlaylist(saved);else openPlaylist(saved);
+            }catch(Exception e){name.setError(e.getMessage());}
+        }));dialog.show();
+    }
+    private void openPlaylist(String id)throws Exception {
+        JSONObject list=playlists.get(id);JSONArray songs=playlists.resolve(id,tracks);
+        new AlertDialog.Builder(this).setTitle(list.getString("name")).setMessage(songs.length()+" saved songs\nPlaylist order follows the order you added songs.")
+            .setPositiveButton("Play",(d,w)->playlistAction(()->PlaybackService.playQueue(this,songs,false,false)))
+            .setNeutralButton("Shuffle",(d,w)->playlistAction(()->PlaybackService.playQueue(this,songs,true,false)))
+            .setNegativeButton("Edit",(d,w)->new AlertDialog.Builder(this).setTitle(list.optString("name"))
+                .setItems(new String[]{"Choose songs","Rename","Delete playlist"},(dialog,which)->playlistAction(()->{
+                    if(which==0)editPlaylist(id);else if(which==1)namePlaylist(id,null);
+                    else new AlertDialog.Builder(this).setTitle("Delete playlist?").setMessage("Your saved songs will stay in Library.")
+                        .setNegativeButton("Keep",null).setPositiveButton("Delete",(confirm,n)->playlistAction(()->{playlists.delete(id);showPlaylists(null);})).show();
+                })).show()).show();
+    }
+    private void editPlaylist(String id)throws Exception {
+        JSONObject list=playlists.get(id);JSONArray old=list.getJSONArray("tracks");
+        JSONArray library=new JSONArray(tracks.toString());String[] labels=new String[library.length()];boolean[] chosen=new boolean[library.length()];
+        java.util.Set<String> selected=new java.util.LinkedHashSet<>();for(int i=0;i<old.length();i++)selected.add(old.getString(i));
+        for(int i=0;i<library.length();i++){JSONObject song=library.getJSONObject(i);labels[i]=song.optString("title")+" — "+song.optString("artist");chosen[i]=selected.contains(song.getString("id"));}
+        new AlertDialog.Builder(this).setTitle("Choose songs · "+list.getString("name"))
+            .setMultiChoiceItems(labels,chosen,(d,which,checked)->{
+                String songId=library.optJSONObject(which).optString("id");if(checked)selected.add(songId);else selected.remove(songId);
+            }).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->playlistAction(()->{
+                JSONArray ids=new JSONArray();for(String songId:selected)ids.put(songId);
+                playlists.save(id,list.getString("name"),ids);openPlaylist(id);
+            })).show();
     }
     private void export(String id) throws Exception {
         JSONObject song=track(id);exportId=id;

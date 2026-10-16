@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0
+
+- Added Play all in oldest-to-newest download order and library-wide Shuffle.
+- Added automatic next-track playback, Previous/Next buttons, and matching notification/lock-screen controls.
+- Added local playlists with song selection, add-from-library, rename, delete, ordered playback, and shuffle.
+- Playlists retain their own song order. Missing library tracks are skipped when resolving a playlist; deleting a playlist does not delete audio.
+- The player shows queue position and whether it is shuffled.
+
 ## 2.1.1
 
 - Replaced the Android website wrapper with a native Find, Downloads, and Library interface.

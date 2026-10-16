@@ -28,6 +28,7 @@ public class NativeUi extends LinearLayout {
     private JSONArray tracks = new JSONArray(), jobs = new JSONArray(), results = new JSONArray();
     private final Map<String,String> titles = new HashMap<>();
     private String tab = "find", query = "";
+    private String queueDescription="Saved on this phone";
     private boolean busy, seeking;
 
     public NativeUi(Context context, Actions actions) {
@@ -66,6 +67,11 @@ public class NativeUi extends LinearLayout {
         toggle.setTextColor(INK);
         playerRow.addView(toggle);
         player.addView(playerRow);
+        LinearLayout transport=row();
+        Button previous=button("← Previous","player-previous",v->actions.run("previous",""));
+        Button next=button("Next →","player-next",v->actions.run("next",""));
+        transport.addView(previous,new LayoutParams(0,dp(48),1));
+        transport.addView(next,new LayoutParams(0,dp(48),1));player.addView(transport);
         seek = new SeekBar(context);
         seek.setContentDescription("Playback position");
         seek.setProgressTintList(ColorStateList.valueOf(Color.rgb(220,245,98)));
@@ -150,8 +156,9 @@ public class NativeUi extends LinearLayout {
         player.setVisibility(VISIBLE); playingTitle.setText(title); toggle.setText(running ? "Pause" : "Play");
         toggle.setContentDescription((running ? "Pause " : "Play ") + title);
         if (!seeking) { seek.setMax(Math.max(0,duration)); seek.setProgress(Math.max(0,position)); }
-        playingTime.setText(time(position/1000) + " / " + time(duration/1000) + "   •   Saved on this phone");
+        playingTime.setText(time(position/1000) + " / " + time(duration/1000) + "   •   "+queueDescription);
     }
+    public void queueDescription(String value){queueDescription=value;}
     public void hidePlayer() { player.setVisibility(GONE); }
     private static String time(int seconds) { return String.format(Locale.ROOT,"%d:%02d",seconds/60,seconds%60); }
 
@@ -220,6 +227,14 @@ public class NativeUi extends LinearLayout {
     }
     private void renderLibrary() {
         heading("SAVED.",tracks.length()+" songs on this phone");
+        LinearLayout controls=row();
+        Button all=button("Play all","library-play-all",v->actions.run("play-all",""));
+        Button shuffle=button("Shuffle","library-shuffle",v->actions.run("shuffle-all",""));
+        all.setEnabled(tracks.length()>0);shuffle.setEnabled(tracks.length()>0);
+        controls.addView(all,new LayoutParams(0,dp(48),1));controls.addView(shuffle,new LayoutParams(0,dp(48),1));
+        content.addView(controls);gap(8);
+        content.addView(button("My playlists","library-playlists",v->actions.run("playlists","")));
+        content.addView(text("Play all follows download order, oldest first.",12,MUTED,false));gap(16);
         if(tracks.length()==0) {
             TextView empty = text("No saved songs yet.\nSearch for a song in Find.",18,MUTED,false);
             empty.setTag("empty-library"); content.addView(empty);

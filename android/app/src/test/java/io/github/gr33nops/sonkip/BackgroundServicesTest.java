@@ -23,6 +23,28 @@ public class BackgroundServicesTest {
     // These tests do not use Bluetooth; keep its unrelated shadow out of decoder setup.
     @Implements(android.bluetooth.BluetoothDevice.class)
     public static class BluetoothDeviceShadow {}
+    @Test public void completionAndNotificationNextAdvanceTheSameQueue()throws Exception {
+        ShadowMediaPlayer.setMediaInfoProvider(source -> new ShadowMediaPlayer.MediaInfo(1000,0));
+        var controller=Robolectric.buildService(PlaybackService.class).create();
+        PlaybackService service=controller.get();
+        org.json.JSONArray songs=new org.json.JSONArray("[{\"id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"title\":\"One\"},{\"id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"title\":\"Two\"},{\"id\":\"cccccccccccccccccccccccccccccccc\",\"title\":\"Three\"}]");
+        java.lang.reflect.Method play;
+        try{play=PlaybackService.class.getDeclaredMethod("playQueue",android.content.Context.class,org.json.JSONArray.class,boolean.class,boolean.class);}
+        catch(NoSuchMethodException e){fail("Playback service does not accept a library queue");return;}
+        play.invoke(null,service,songs,false,false);
+        service.onStartCommand(new Intent().setAction("queue"),0,1);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50));
+        assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",service.trackId);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1000));
+        assertEquals("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",service.trackId);
+        service.onStartCommand(new Intent().setAction("next"),0,2);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50));
+        assertEquals("cccccccccccccccccccccccccccccccc",service.trackId);
+        service.onStartCommand(new Intent().setAction("previous"),0,3);
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50));
+        assertEquals("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",service.trackId);
+        controller.destroy();
+    }
     private Class<? extends Service> service(String name) {
         try { return Class.forName("io.github.gr33nops.sonkip." + name).asSubclass(Service.class); }
         catch (ClassNotFoundException e) { fail("Missing background service: " + name); return null; }

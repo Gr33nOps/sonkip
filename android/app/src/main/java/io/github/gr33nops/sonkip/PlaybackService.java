@@ -8,11 +8,15 @@ import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.*;
+import org.json.*;
+import java.util.Random;
 
 /** Owns playback independently of the activity, including lock-screen controls. */
 public class PlaybackService extends Service {
     static PlaybackService current;
     static String error;
+    private static PlaybackQueue pendingQueue;
+    private PlaybackQueue queue;
     String trackId = "", title = "";
     private MediaPlayer player;
     private MediaSession session;
@@ -48,6 +52,8 @@ public class PlaybackService extends Service {
             @Override public void onPause() { pause(); }
             @Override public void onStop() { stopSelf(); }
             @Override public void onSeekTo(long position) { seek((int)position); }
+            @Override public void onSkipToNext() { next(); }
+            @Override public void onSkipToPrevious() { previous(); }
         });
         session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
         IntentFilter filter = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
@@ -63,13 +69,32 @@ public class PlaybackService extends Service {
             .putExtra("id", id).putExtra("title", title);
         if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent); else context.startService(intent);
     }
+    static void playQueue(Context context,JSONArray songs,boolean shuffle,boolean chronological) {
+        if(songs.length()==0)throw new IllegalArgumentException("This playlist has no saved songs yet.");
+        pendingQueue=new PlaybackQueue(songs,shuffle,chronological,new Random());
+        Intent intent=new Intent(context,PlaybackService.class).setAction("queue");
+        if(Build.VERSION.SDK_INT>=26)context.startForegroundService(intent);else context.startService(intent);
+    }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? "stop" : intent.getAction();
         if ("stop".equals(action)) { stopSelf(); return START_NOT_STICKY; }
         if ("pause".equals(action)) pause();
         else if ("resume".equals(action)) resume();
+        else if ("next".equals(action)) next();
+        else if ("previous".equals(action)) previous();
+        else if ("queue".equals(action)) {
+            if(pendingQueue!=null){queue=pendingQueue;pendingQueue=null;open(queue.current());}
+        }
         else if ("play".equals(action)) {
-            trackId = intent.getStringExtra("id"); title = intent.getStringExtra("title");
+            queue=null;
+            try{open(new JSONObject().put("id",intent.getStringExtra("id")).put("title",intent.getStringExtra("title")));}
+            catch(JSONException e){failPlayback();}
+        }
+        return START_NOT_STICKY;
+    }
+    private void open(JSONObject song) {
+            if(song==null){pause();return;}
+            trackId= song.optString("id");title=song.optString("title","Untitled");
             error = null; prepared = false; resumeOnFocus = false;
             handler.removeCallbacks(idleStop);
             promote();
@@ -81,17 +106,20 @@ public class PlaybackService extends Service {
                 if (trackId == null || !trackId.matches("[0-9a-f]{32}")) throw new IllegalArgumentException("Invalid saved song");
                 player.setDataSource(this, Uri.parse("http://127.0.0.1:8765/api/tracks/" + trackId + "/audio"));
                 player.setOnPreparedListener(p -> { if (p == player) { prepared = true; resume(); } });
-                player.setOnCompletionListener(p -> pause());
-                player.setOnErrorListener((p, what, extra) -> { failPlayback(); return true; });
+                player.setOnCompletionListener(p -> {if(p==player)next();});
+                player.setOnErrorListener((p, what, extra) -> { if(p==player)failPlayback(); return true; });
                 player.prepareAsync();
             } catch (Exception e) { failPlayback(); }
-        }
-        return START_NOT_STICKY;
     }
     private void failPlayback() {
-        error = "Android could not play this file. Try exporting it to another player.";
-        stopSelf();
+        error = "A song could not be played. Try exporting it to another player.";
+        prepared=false;
+        JSONObject following=queue==null?null:queue.next();
+        if(following==null)stopSelf();else handler.post(()->open(following));
     }
+    void next(){JSONObject following=queue==null?null:queue.next();if(following==null)pause();else open(following);}
+    void previous(){if(position()>3000){seek(0);return;}if(queue!=null)open(queue.previous());else seek(0);}
+    String queueDescription(){return queue==null?"Saved on this phone":queue.description();}
     boolean isPlaying() { return prepared && player != null && player.isPlaying(); }
     boolean isPrepared() { return prepared; }
     int position() { return prepared ? player.getCurrentPosition() : 0; }
@@ -124,13 +152,15 @@ public class PlaybackService extends Service {
         return builder.setSmallIcon(R.drawable.ic_stat_music).setLargeIcon(NotificationBrand.artwork())
             .setColor(NotificationBrand.ORANGE).setSubText("sonkip. · LOCAL ONLY").setShowWhen(false)
             .setContentTitle(title.isEmpty() ? "Sonkip" : title)
-            .setContentText(prepared ? (playing ? "Playing on this phone" : "Paused") : "Opening audio…")
+            .setContentText(prepared ? (playing ? queueDescription() : "Paused · "+queueDescription()) : "Opening audio…")
             .setContentIntent(PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
             .setVisibility(Notification.VISIBILITY_PUBLIC).setOnlyAlertOnce(true).setOngoing(playing)
+            .addAction(android.R.drawable.ic_media_previous,"Previous",command("previous"))
             .addAction(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
                 playing ? "Pause" : "Play", command(playing ? "pause" : "resume"))
+            .addAction(android.R.drawable.ic_media_next,"Next",command("next"))
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", command("stop"))
-            .setStyle(new Notification.MediaStyle().setMediaSession(session.getSessionToken()).setShowActionsInCompactView(0, 1)).build();
+            .setStyle(new Notification.MediaStyle().setMediaSession(session.getSessionToken()).setShowActionsInCompactView(0, 1, 2)).build();
     }
     private void promote() {
         if (Build.VERSION.SDK_INT >= 29) startForeground(201, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
@@ -140,7 +170,8 @@ public class PlaybackService extends Service {
         session.setMetadata(new MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, title)
             .putLong(MediaMetadata.METADATA_KEY_DURATION, duration()).build());
         session.setPlaybackState(new PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
-            | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_STOP | PlaybackState.ACTION_SEEK_TO)
+            | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_STOP | PlaybackState.ACTION_SEEK_TO
+            | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
             .setState(isPlaying() ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, position(), isPlaying() ? 1f : 0f).build());
         getSystemService(NotificationManager.class).notify(201, notification());
     }
