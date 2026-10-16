@@ -3,7 +3,7 @@
     android: {
       label: "ANDROID",
       button: "DOWNLOAD FOR ANDROID (.APK)",
-      href: "https://github.com/Gr33nOps/sonkip/releases/download/android-latest/sonkip-android.apk",
+      href: "https://github.com/Gr33nOps/sonkip/releases/download/v2.2.0/Sonkip-2.2.0.apk",
       commandLabel: "",
       command: "",
     },

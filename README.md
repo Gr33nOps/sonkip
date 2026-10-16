@@ -1,10 +1,14 @@
-# sonkip.
+![sonkip. — Find it. Save it. Play it.](docs/brand.svg)
 
-### Find it. Save it. Play it.
+# sonkip.
 
 Save public YouTube songs and playlists on your own device. Sonkip runs as a native Android app or a local website on Windows, macOS, and Linux. Your library stays on your device; Sonkip has no accounts or analytics.
 
-[Website](https://gr33nops.github.io/sonkip/) · [Android releases](https://github.com/Gr33nOps/sonkip/releases) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.2.0/Sonkip-2.2.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.2.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+
+**Android 7+ · Windows · macOS · Linux**
+
+Android includes local playlists, shuffle, ordered playback, and background playback/download services. The desktop version runs in your browser on localhost. Downloads preserve the source audio format; they are not converted to MP3.
 
 The GitHub Pages site is a static project page. The downloader intentionally runs on your own computer so searches, audio files, and library data are never sent to a sonkip server.
 
@@ -163,6 +167,12 @@ Install Java 17, Gradle 8.13, Android SDK 35, NDK `28.2.13676358`, CMake and Nin
 - Track art is loaded from `i.ytimg.com` while online; original media is local, but covers aren't cached offline.
 - No automated YouTube integration test is included, as it would require real network access.
 - Run this on your own trusted computer; **do not expose it to your LAN or the public internet**. The app has no user authentication and is not hardened for multi-user hosting.
+
+## Contributing
+
+Bug reports and focused pull requests are welcome. Include your device or operating system, Sonkip version, steps to reproduce, and the error message. For download failures, include a public example link if possible. Do not post cookies, sign-in data, private playlist links, or personal files.
+
+Run the tests before submitting code changes. Describe what changed and how you checked it; real-device Android checks are especially helpful for playback and background behavior.
 
 ## License
 

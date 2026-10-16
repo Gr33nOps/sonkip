@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="280" viewBox="0 0 1000 280" role="img" aria-labelledby="title desc">
+  <title id="title">sonkip. Find it. Save it. Play it.</title>
+  <desc id="desc">Cream, black and orange Sonkip wordmark with a lime-labelled vinyl record.</desc>
+  <rect width="1000" height="280" fill="#f4f1e8"/>
+  <text x="46" y="86" fill="#141412" font-family="Arial,sans-serif" font-size="54" font-weight="700" letter-spacing="-3">sonkip.</text>
+  <text x="46" y="156" fill="#141412" font-family="Arial,sans-serif" font-size="44" font-weight="700" letter-spacing="-2">Find it. <tspan fill="#ff5000">Save it.</tspan> Play it.</text>
+  <text x="48" y="216" fill="#64625a" font-family="monospace" font-size="16">OPEN SOURCE · LOCAL LIBRARY · NO ACCOUNT</text>
+  <circle cx="849" cy="150" r="108" fill="#ff5000"/>
+  <circle cx="840" cy="139" r="108" fill="#141412"/>
+  <g fill="none" stroke="#373732" stroke-width="2"><circle cx="840" cy="139" r="98"/><circle cx="840" cy="139" r="89"/><circle cx="840" cy="139" r="80"/><circle cx="840" cy="139" r="71"/><circle cx="840" cy="139" r="62"/><circle cx="840" cy="139" r="53"/></g>
+  <circle cx="840" cy="139" r="39" fill="#dcff00"/>
+  <text x="840" y="151" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="#141412">SK</text>
+</svg>
