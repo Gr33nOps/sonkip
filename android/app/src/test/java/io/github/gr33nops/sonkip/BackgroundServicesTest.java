@@ -23,6 +23,36 @@ public class BackgroundServicesTest {
     // These tests do not use Bluetooth; keep its unrelated shadow out of decoder setup.
     @Implements(android.bluetooth.BluetoothDevice.class)
     public static class BluetoothDeviceShadow {}
+    @Test public void sleepTimerPausesBackgroundPlayback()throws Exception {
+        ShadowMediaPlayer.setMediaInfoProvider(source -> new ShadowMediaPlayer.MediaInfo(180000,0));
+        var controller=Robolectric.buildService(PlaybackService.class).create();
+        PlaybackService service=controller.get();
+        try {
+            service.onStartCommand(new Intent().setAction("play").putExtra("id","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").putExtra("title","One"),0,1);
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50));
+            assertTrue(service.isPlaying());
+            java.lang.reflect.Method timer=java.util.Arrays.stream(PlaybackService.class.getDeclaredMethods()).filter(m->m.getName().equals("sleepAfter")).findFirst().orElse(null);
+            assertNotNull("Playback needs a sleep timer",timer);
+            timer.invoke(service,1);
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(59));assertTrue(service.isPlaying());
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));assertFalse(service.isPlaying());
+        } finally {controller.destroy();}
+    }
+
+    @Test public void repeatOneReplaysOnCompletionButNextStillSkips()throws Exception {
+        ShadowMediaPlayer.setMediaInfoProvider(source -> new ShadowMediaPlayer.MediaInfo(1000,0));
+        var controller=Robolectric.buildService(PlaybackService.class).create();
+        PlaybackService service=controller.get();
+        try {
+            PlaybackService.playQueue(service,new org.json.JSONArray("[{\"id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"title\":\"One\"},{\"id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"title\":\"Two\"}]"),false,false);
+            service.onStartCommand(new Intent().setAction("queue"),0,1);
+            java.lang.reflect.Method repeat=java.util.Arrays.stream(PlaybackService.class.getDeclaredMethods()).filter(m->m.getName().equals("repeat")).findFirst().orElse(null);
+            assertNotNull("Playback needs repeat controls",repeat);repeat.invoke(service,"one");
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1100));
+            assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",service.trackId);
+            service.next();assertEquals("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",service.trackId);
+        } finally {controller.destroy();}
+    }
     @Test public void completionAndNotificationNextAdvanceTheSameQueue()throws Exception {
         ShadowMediaPlayer.setMediaInfoProvider(source -> new ShadowMediaPlayer.MediaInfo(1000,0));
         var controller=Robolectric.buildService(PlaybackService.class).create();

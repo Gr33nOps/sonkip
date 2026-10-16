@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import tempfile
+import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.background import BackgroundTask
 
 from .engine import DownloadManager, extract_playlist, get_stream_url, search_music, VIDEO_ID_RE
 from .storage import MusicStore
@@ -111,6 +114,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             jobs = [
                 {**entry, "job_id": manager.start(entry["video_id"])}
                 for entry in playlist["entries"]
+                if not entry.get('needs_review')
             ]
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -119,6 +123,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Playlist provider unavailable: {str(exc)[:220]}") from exc
         return {"title": playlist["title"], "count": len(jobs), "jobs": jobs,
+                "review": [entry for entry in playlist['entries'] if entry.get('needs_review')],
                 "unmatched": playlist.get("unmatched", []), "notice": playlist.get("notice", ""),
                 "source_count": playlist.get("source_count", len(jobs))}
 
@@ -133,9 +138,55 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Job not found")
         return job
 
+    @app.post('/api/jobs/retry-failed')
+    def retry_failed():
+        return {'job_ids': manager.retry_failed()}
+
+    @app.post('/api/jobs/resume-interrupted')
+    def resume_interrupted():
+        return {'job_ids': manager.resume_interrupted()}
+
+    @app.post('/api/jobs/{job_id}/cancel')
+    def cancel_job(job_id: str):
+        try:
+            manager.cancel(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {'ok': True}
+
     @app.get("/api/tracks")
     def list_tracks():
         return {"tracks": store.list_tracks()}
+
+    @app.get('/api/backup')
+    def backup():
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False, dir=store.home) as output:
+            path = Path(output.name)
+        try:
+            store.export_backup(path)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        return FileResponse(path, filename='Sonkip-backup.zip', media_type='application/zip',
+                            background=BackgroundTask(path.unlink, missing_ok=True))
+
+    @app.post('/api/backup/restore')
+    async def restore_backup(request: Request):
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False, dir=store.home) as output:
+            path = Path(output.name)
+            try:
+                async for chunk in request.stream():
+                    output.write(chunk)
+            except BaseException:
+                output.close()
+                path.unlink(missing_ok=True)
+                raise
+        try:
+            return await asyncio.to_thread(store.import_backup, path)
+        except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
+            raise HTTPException(status_code=422, detail='Could not restore this Sonkip backup: ' + str(exc)) from exc
+        finally:
+            path.unlink(missing_ok=True)
 
     def get_audio(track_id: str):
         track = store.get_track(track_id)

@@ -122,6 +122,7 @@ def search_music(query: str, cookiefile: Path | None = None) -> list[dict[str, A
             "artist": str(item.get("uploader") or item.get("channel") or "Unknown artist"),
             "duration": int(duration) if isinstance(duration, (int, float)) and duration >= 0 else None,
             "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+            "channel_is_verified": bool(item.get('channel_is_verified')),
         })
     return results
 
@@ -192,8 +193,17 @@ def _match_track(track: dict, cookiefile: Path | None) -> dict | None:
         if expected and actual and abs(expected - actual) > max(25, expected * .15):
             continue
         score = title_score + artist_score
+        uploader_words = _words(candidate['artist'])
+        artist_channel = artist_words.issubset(uploader_words)
+        if artist_channel:
+            score += .2
+            if candidate.get('channel_is_verified') or 'topic' in uploader_words:
+                score += .3
+        if expected and actual:
+            score += .1 * max(0, 1 - abs(expected - actual) / max(1, expected))
         if score > best_score:
-            best, best_score = candidate, score
+            best = {**candidate, 'needs_review': not (expected and actual and title_score == 1 and artist_score == 1)}
+            best_score = score
     return best
 
 
@@ -252,7 +262,15 @@ class DownloadManager:
         self.store = store
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sonkip-download")
         self.lock = threading.Lock()
+        self.cancellations = {}
+        self.futures = {}
         self.jobs: dict[str, dict[str, Any]] = {}
+        for job in store.load_jobs():
+            if job['status'] not in ('complete', 'error'):
+                job.update(status='error', speed=None, eta=None, interrupted=True,
+                           error='Download interrupted. Retry to continue the saved partial file.')
+                store.save_job(job)
+            self.jobs[job['id']] = job
 
     def list_jobs(self):
         with self.lock:
@@ -267,12 +285,35 @@ class DownloadManager:
         with self.lock:
             if job_id in self.jobs:
                 self.jobs[job_id].update(changes)
+                self.store.save_job(self.jobs[job_id])
 
     def start(self, video_id: str):
         if not VIDEO_ID_RE.fullmatch(video_id):
             raise ValueError("Invalid video ID")
         job_id = uuid.uuid4().hex
         with self.lock:
+            saved = next((track for track in self.store.list_tracks() if track['video_id'] == video_id), None)
+            if saved:
+                job_id = saved['id']
+                self.jobs[job_id] = {
+                    'id': job_id, 'video_id': video_id, 'status': 'complete', 'percent': 100,
+                    'speed': None, 'eta': None, 'error': None, 'track_id': saved['id'],
+                    'created_at': datetime.now(timezone.utc).isoformat(), 'already_saved': True,
+                    'title': saved['title'], 'artist': saved['artist'],
+                }
+                self.store.save_job(self.jobs[job_id])
+                return job_id
+            for existing in self.jobs.values():
+                if existing['video_id'] != video_id:
+                    continue
+                if existing['status'] not in ('error', 'complete'):
+                    return existing['id']
+                if existing['status'] == 'error':
+                    job_id = existing['id']
+                    future = self.futures.get(job_id)
+                    if future is not None and not future.done():
+                        raise ValueError('This download is still stopping. Please retry in a moment.')
+                    break
             # Keep terminal jobs for the lifetime of the process so playlist
             # clients can poll every result, including large batches.
             self.jobs[job_id] = {
@@ -286,13 +327,48 @@ class DownloadManager:
                 "track_id": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
-        self.pool.submit(self._run, job_id, video_id)
+            self.store.save_job(self.jobs[job_id])
+            self.cancellations[job_id] = threading.Event()
+            self.futures[job_id] = self.pool.submit(self._run, job_id, video_id)
         return job_id
 
+    def cancel(self, job_id: str):
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if job is None:
+                raise ValueError('Download not found')
+            if job['status'] == 'complete':
+                return
+            event = self.cancellations.get(job_id)
+            if event is not None:
+                event.set()
+            job.update(status='error', cancelled=True, error='Cancelled. Retry to resume.', speed=None, eta=None)
+            self.store.save_job(job)
+
+    def retry_failed(self):
+        retried = []
+        for job in self.list_jobs():
+            if job['status'] == 'error' and not job.get('cancelled'):
+                try:
+                    retried.append(self.start(job['video_id']))
+                except ValueError:
+                    # A cancelled worker may still be returning from a network call.
+                    continue
+        return retried
+
+    def resume_interrupted(self):
+        return [self.start(job['video_id']) for job in self.list_jobs()
+                if job.get('interrupted') and not job.get('cancelled') and job['status'] == 'error']
+
     def _run(self, job_id: str, video_id: str):
+        cancelled = self.cancellations[job_id]
+        if cancelled.is_set():
+            return
         self._update(job_id, status="starting")
 
         def progress(info):
+            if cancelled.is_set():
+                raise RuntimeError('Cancelled. Retry to resume.')
             if info.get("status") == "finished":
                 self._update(job_id, status="processing", percent=100)
             elif info.get("status") == "downloading":
@@ -326,10 +402,25 @@ class DownloadManager:
                 **youtube_access_options(self.store.youtube_cookies_path),
             }
             try:
-                with YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+                for attempt in range(3):
+                    if cancelled.is_set():
+                        raise RuntimeError('Cancelled. Retry to resume.')
+                    try:
+                        with YoutubeDL(opts) as ydl:
+                            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+                        break
+                    except Exception as transient:
+                        message = str(transient).lower()
+                        retryable = any(word in message for word in (
+                            'timed out', 'timeout', 'connection reset', 'connection aborted',
+                            'temporary failure', 'network is unreachable', 'http error 502', 'http error 503'))
+                        if cancelled.is_set() or not retryable or attempt == 2:
+                            raise
+                        self._update(job_id, status='starting', attempt=attempt + 2,
+                                     error='Connection interrupted; retrying…', speed=None, eta=None)
+                        cancelled.wait(2 ** attempt)
             except Exception as first_error:
-                if "403" not in str(first_error):
+                if cancelled.is_set() or "403" not in str(first_error):
                     raise
                 # A listed direct stream can expire or reject this client while
                 # the same video's public HLS stream is still available.
@@ -347,10 +438,12 @@ class DownloadManager:
                     ) from first_error
             if not info:
                 raise RuntimeError("No audio information was returned")
+            if cancelled.is_set():
+                raise RuntimeError('Cancelled. Retry to resume.')
 
             matching = [p for p in self.store.tracks_dir.glob(job_id + ".*")
                         if p.is_file() and p.suffix.lower() not in (".part", ".ytdl", ".tmp")
-                        and not p.name.endswith(".part-Frag0")]
+                        and '.part' not in p.name]
             if not matching:
                 raise RuntimeError("Download ended without an audio file")
             path = max(matching, key=lambda p: p.stat().st_size)
@@ -369,12 +462,15 @@ class DownloadManager:
                 "codec": str(codec) if codec else None,
                 "abr": float(abr) if isinstance(abr, (float, int)) else None,
             }
-            self.store.add_track(track)
-            self._update(job_id, status="complete", percent=100, track_id=job_id)
+            with self.lock:
+                if cancelled.is_set():
+                    raise RuntimeError('Cancelled. Retry to resume.')
+                self.store.add_track(track)
+                self.jobs[job_id].update(status='complete', percent=100, track_id=job_id, error=None, speed=None, eta=None,
+                                         title=track['title'], artist=track['artist'])
+                self.store.save_job(self.jobs[job_id])
         except Exception as exc:
             # yt-dlp can fail due to deleted, blocked or unavailable content.
-            self._update(job_id, status="error", error=str(exc)[:350])
-            # Remove only this job's unfinished files; do not touch completed tracks.
-            for path in self.store.tracks_dir.glob(job_id + ".*"):
-                if path.is_file():
-                    path.unlink(missing_ok=True)
+            self._update(job_id, status="error", error='Cancelled. Retry to resume.' if cancelled.is_set() else str(exc)[:350],
+                         cancelled=cancelled.is_set(), speed=None, eta=None)
+            # Keep partial files under the same job ID so yt-dlp can resume a retry.

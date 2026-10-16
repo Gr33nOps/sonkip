@@ -28,6 +28,7 @@ public class NativeUi extends LinearLayout {
     private JSONArray tracks = new JSONArray(), jobs = new JSONArray(), results = new JSONArray();
     private final Map<String,String> titles = new HashMap<>();
     private String tab = "find", query = "";
+    private String libraryQuery="", librarySort="newest";
     private String queueDescription="Saved on this phone";
     private boolean busy, seeking;
 
@@ -87,6 +88,7 @@ public class NativeUi extends LinearLayout {
         player.addView(seek, new LayoutParams(-1, dp(32)));
         playingTime = text("", 11, Color.LTGRAY, false);
         player.addView(playingTime);
+        player.addView(button("Queue · Repeat · Sleep timer","player-options",v->actions.run("player-options","")));
         player.setVisibility(GONE);
         addView(player);
         navigation = row();
@@ -234,22 +236,37 @@ public class NativeUi extends LinearLayout {
         controls.addView(all,new LayoutParams(0,dp(48),1));controls.addView(shuffle,new LayoutParams(0,dp(48),1));
         content.addView(controls);gap(8);
         content.addView(button("My playlists","library-playlists",v->actions.run("playlists","")));
+        content.addView(button("Search & sort","library-filter",v->actions.run("library-filter","")));
+        content.addView(button("Backup & restore","library-backup",v->actions.run("library-backup","")));
+        if(!libraryQuery.isEmpty())content.addView(text("Matching: "+libraryQuery,12,MUTED,false));
         content.addView(text("Play all follows download order, oldest first.",12,MUTED,false));gap(16);
         if(tracks.length()==0) {
             TextView empty = text("No saved songs yet.\nSearch for a song in Find.",18,MUTED,false);
             empty.setTag("empty-library"); content.addView(empty);
             content.addView(button("Find music","empty-find",v -> showTab("find")));
         }
-        for(int i=0;i<tracks.length();i++) trackCard(tracks.optJSONObject(i),true);
+        java.util.List<JSONObject> visible=new java.util.ArrayList<>();
+        for(int i=0;i<tracks.length();i++) {
+            JSONObject track=tracks.optJSONObject(i);
+            if(track!=null && (track.optString("title")+" "+track.optString("artist")).toLowerCase(Locale.ROOT).contains(libraryQuery.toLowerCase(Locale.ROOT)))visible.add(track);
+        }
+        if(librarySort.equals("oldest"))java.util.Collections.reverse(visible);
+        else if(librarySort.equals("title") || librarySort.equals("artist"))visible.sort(java.util.Comparator.comparing(t->t.optString(librarySort).toLowerCase(Locale.ROOT)));
+        for(JSONObject track:visible)trackCard(track,true);
+        if(!libraryQuery.isEmpty() && visible.isEmpty())content.addView(text("No saved songs match this search.",14,MUTED,false));
     }
+    void filterLibrary(String query,String sort){libraryQuery=query.trim();librarySort=sort;render();}
     private void trackCard(JSONObject item, boolean saved) {
         if(item==null) return;
         String id = item.optString(saved ? "id" : "video_id");
         LinearLayout box = card(); box.addView(text(item.optString("title","Untitled"),17,INK,true));
         box.addView(text(item.optString("artist","Unknown artist")+"  ·  "+time(item.optInt("duration")),12,MUTED,false));
         LinearLayout buttons = row();
-        Button primary = button(saved ? "Play" : "Save",(saved ? "play-" : "save-")+id,
-                v -> actions.run(saved ? "play" : "save",id));
+        String existingId="";
+        if(!saved)for(int i=0;i<tracks.length();i++){JSONObject local=tracks.optJSONObject(i);if(local!=null && id.equals(local.optString("video_id"))){existingId=local.optString("id");break;}}
+        final String localId=existingId;
+        Button primary = button(saved ? "Play" : localId.isEmpty()?"Save":"Play saved",(saved ? "play-" : "save-")+id,
+                v -> actions.run(saved || !localId.isEmpty() ? "play" : "save",localId.isEmpty()?id:localId));
         buttons.addView(primary,new LayoutParams(0,dp(48),1));
         if(saved) {
             buttons.addView(button("Export","export-"+id,v -> actions.run("export",id)),new LayoutParams(0,dp(48),1));
@@ -264,10 +281,11 @@ public class NativeUi extends LinearLayout {
         heading("DOWNLOADS.", jobs.length()==0 ? "Songs you save appear here." : complete+" saved  ·  "+failed+" failed  ·  "+(jobs.length()-complete-failed)+" pending");
         if(jobs.length()==0) { content.addView(text("Nothing queued yet.\nSave a song or paste a playlist in Find.",18,MUTED,false)); return; }
         content.addView(text("You can switch apps. Check progress in your notifications.",12,MUTED,false)); gap(12);
+        if(failed>0)content.addView(button("Retry failed","retry-failed",v->actions.run("retry-failed","")));
         for(int i=jobs.length()-1;i>=0;i--) {
             JSONObject job=jobs.optJSONObject(i); if(job==null)continue;
             String id=job.optString("id"), video=job.optString("video_id"), status=job.optString("status");
-            LinearLayout box=card(); box.addView(text(titles.getOrDefault(video,video),16,INK,true));
+            LinearLayout box=card(); box.addView(text(titles.getOrDefault(video,job.optString("title",video)),16,INK,true));
             String label = status.equals("complete") ? "Saved · ready to play" : status.equals("starting") ? "Preparing audio…" : status.equals("processing") ? "Finishing…" : status.equals("error") ? "Couldn't save this song" : status.equals("queued") ? "Waiting in queue" : "Downloading · "+job.optInt("percent")+"%";
             box.addView(text(label,12,status.equals("error")?ORANGE:MUTED,false));
             if(status.equals("error")) {
@@ -280,6 +298,7 @@ public class NativeUi extends LinearLayout {
                 progress.setMax(100); progress.setProgress(Math.max(0,Math.min(100,job.optInt("percent"))));
                 progress.setIndeterminate(status.equals("starting") || status.equals("processing"));
                 box.addView(progress,new LayoutParams(-1,dp(16)));
+                box.addView(button("Cancel","cancel-"+id,v->actions.run("cancel-download",id)));
             }
         }
     }

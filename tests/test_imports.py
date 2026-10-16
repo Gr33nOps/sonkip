@@ -55,3 +55,20 @@ def test_untrusted_playlist_hosts_are_rejected(url):
 def test_matching_rejects_wrong_version_artist_and_preview(monkeypatch, candidate):
     monkeypatch.setattr(engine, 'search_music', lambda *a: [candidate])
     assert engine._match_track({'title':'Let It Happen','artist':'Tame Impala','duration':468}, None) is None
+
+
+def test_matching_prefers_verified_artist_over_reupload(monkeypatch):
+    monkeypatch.setattr(engine, 'search_music', lambda *a: [
+        {'video_id':'abcdefghijk','title':'Tame Impala - Let It Happen','artist':'Music archive','duration':468},
+        {'video_id':'NMRhx71bGo4','title':'Let It Happen (Official Audio)','artist':'Tame Impala','duration':468,'channel_is_verified':True},
+    ])
+    result = engine._match_track({'title':'Let It Happen','artist':'Tame Impala','duration':468}, None)
+    assert result['video_id'] == 'NMRhx71bGo4'
+
+
+def test_matching_flags_missing_duration_for_review(monkeypatch):
+    monkeypatch.setattr(engine, 'search_music', lambda *a: [
+        {'video_id':'abcdefghijk','title':'Let It Happen','artist':'Tame Impala','duration':None},
+    ])
+    result = engine._match_track({'title':'Let It Happen','artist':'Tame Impala','duration':468}, None)
+    assert result.get('needs_review') is True

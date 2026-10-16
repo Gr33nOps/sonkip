@@ -7,7 +7,10 @@
     query: "",
     results: [],
     library: [],
+    libraryQuery: "",
+    librarySort: "newest",
     activeJobs: new Map(), // video_id -> job
+    jobPollers: new Map(),
     currentlyPlaying: null, // { id, video_id, title, artist, url }
     isPlaying: false,
     searchTimeout: null,
@@ -88,6 +91,14 @@
     }
   }
 
+  function filteredLibrary() {
+    const query = state.libraryQuery.toLocaleLowerCase().trim();
+    const songs = state.library.filter(track => `${track.title} ${track.artist}`.toLocaleLowerCase().includes(query));
+    if (state.librarySort === "oldest") songs.reverse();
+    else if (["title", "artist"].includes(state.librarySort)) songs.sort((a,b) => String(a[state.librarySort]).localeCompare(String(b[state.librarySort])));
+    return songs;
+  }
+
   // --- Rendering ---
 
   function render() {
@@ -97,6 +108,7 @@
     const mainContent = document.querySelector(".main-content");
 
     searchClear.hidden = !$("search-input").value;
+    $("library-tools").hidden = state.currentTab !== "library";
 
     const isInitial = state.currentTab === "search" && !state.query;
     if (mainContent) {
@@ -114,7 +126,7 @@
       }
       statusMsg.hidden = true;
       list.hidden = false;
-      list.innerHTML = state.library
+      list.innerHTML = filteredLibrary()
         .map((track) => renderTrackRow(track, true))
         .join("");
       return;
@@ -175,6 +187,7 @@
           <span class="spinner"></span>
           <span class="hidden sm:inline">DOWNLOADING ${pct}</span>
         </button>
+        ${job.id ? `<button class="track-download-btn" data-cancel-job="${safe(job.id)}">Cancel</button>` : ""}
       `;
     } else if (isLocalSaved) {
       const localItem = state.library.find(
@@ -215,6 +228,7 @@
         <div class="track-info">
           <h2 class="track-title">${safe(track.title)}</h2>
           <p class="track-artist">${safe(track.artist)}${tagHtml}</p>
+          ${track.needs_review ? `<p class="track-error">Check this match before downloading. The version or duration is uncertain.</p>` : ""}
           ${job?.status === "error" ? `<p class="track-error">${safe(job.error || "Download failed")}. Use the download button to retry.</p>` : ""}
         </div>
         <div class="track-actions">
@@ -293,11 +307,12 @@
       };
       state.currentTab = "search";
       state.query = url;
-      state.results = data.jobs;
+      state.results = [...(data.review || []), ...data.jobs];
       $("playlist-title").textContent = data.title + (data.notice ? ` · ${data.count} matched / ${data.source_count} listed. ${data.unmatched.length} skipped. ${data.notice}` : "");
       $("playlist-count").textContent = `0 / ${data.count}`;
       $("playlist-meter-fill").style.width = "12%";
       showToast(`${data.count} songs queued from ${data.title}`);
+      if (data.review?.length) $("playlist-title").textContent += ` · ${data.review.length} uncertain matches below — review before downloading`;
       for (const item of data.jobs) {
         state.activeJobs.set(item.video_id, {
           video_id: item.video_id,
@@ -364,7 +379,8 @@
     }
   }
 
-  function pollJob(jobId, videoId, title, isPlaylist = false) {
+  function pollJob(jobId, videoId, title, isPlaylist = false, exportFile = !isPlaylist) {
+    if(state.jobPollers.has(jobId))return;
     let polling = false;
     const timer = setInterval(async () => {
       if (polling) return;
@@ -376,17 +392,19 @@
 
         if (job.status === "complete") {
           clearInterval(timer);
+          state.jobPollers.delete(jobId);
           showToast(`Downloaded ${title}! Saved to your device.`);
           await loadLibrary();
 
           // Trigger browser file download directly
-          if (job.track_id && !isPlaylist) {
+          if (job.track_id && exportFile) {
             triggerBrowserDownload(job.track_id);
           }
           render();
           if (isPlaylist) updatePlaylistProgress();
         } else if (job.status === "error") {
           clearInterval(timer);
+          state.jobPollers.delete(jobId);
           showToast(`Download failed: ${job.error || "Unknown error"}`, true);
           render();
           if (isPlaylist) updatePlaylistProgress(true);
@@ -397,6 +415,7 @@
         polling = false;
       }
     }, 1000);
+    state.jobPollers.set(jobId,timer);
   }
 
   function triggerBrowserDownload(trackId) {
@@ -647,6 +666,33 @@
 
   $("nav-search-btn").addEventListener("click", () => switchTab("search"));
   $("nav-lib-btn").addEventListener("click", () => switchTab("library"));
+  $("library-query").addEventListener("input", event => {state.libraryQuery=event.target.value;render();});
+  $("library-sort").addEventListener("change", event => {state.librarySort=event.target.value;render();});
+  $("restore-backup").addEventListener("click", () => $("backup-file").click());
+  $("backup-file").addEventListener("change", async event => {
+    const file=event.target.files[0];if(!file)return;
+    if(!confirm("Restore this Sonkip backup? Missing songs will be added; existing songs are kept.")){event.target.value="";return;}
+    try {showToast("Restoring backup…");const result=await api("/api/backup/restore",{method:"POST",body:file,headers:{"Content-Type":"application/zip"}});await loadLibrary();render();showToast(`${result.imported} songs restored`);}
+    catch(error){showToast(error.message,true);}finally{event.target.value="";}
+  });
+  $("show-downloads").addEventListener("click", () => loadDownloadHistory().catch(error=>showToast(error.message,true)));
+  $("retry-failed").addEventListener("click", async () => {
+    try {const result=await api("/api/jobs/retry-failed",{method:"POST"});await loadDownloadHistory();showToast(`${result.job_ids.length} downloads queued again`);}
+    catch(error){showToast(error.message,true);}
+  });
+
+  async function loadDownloadHistory() {
+    const data=await api("/api/jobs");
+    state.query="Downloads";
+    state.results=data.jobs.map(job=>{
+      state.activeJobs.set(job.video_id,job);
+      const track=state.library.find(track=>track.video_id===job.video_id);
+      const title=track?.title || job.title || job.video_id;
+      if(!["error","complete"].includes(job.status))pollJob(job.id,job.video_id,title,false,false);
+      return {video_id:job.video_id,title,artist:track?.artist || job.artist || "Download history"};
+    });
+    switchTab("search");
+  }
 
   function switchTab(tab) {
     state.currentTab = tab;
@@ -656,6 +702,8 @@
   }
 
   document.addEventListener("click", (e) => {
+    const cancel=e.target.closest("[data-cancel-job]");
+    if(cancel){api(`/api/jobs/${encodeURIComponent(cancel.dataset.cancelJob)}/cancel`,{method:"POST"}).then(loadDownloadHistory).catch(error=>showToast(error.message,true));return;}
     const playBtn = e.target.closest("[data-play-track]");
     if (playBtn) {
       const idOrVid = playBtn.dataset.playTrack;
@@ -792,6 +840,9 @@
   } else {
     Promise.all([loadLibrary(), loadAuthStatus()]).then(() => {
       render();
+      api("/api/jobs/resume-interrupted",{method:"POST"}).then(result=>{
+        if(result.job_ids.length)loadDownloadHistory().catch(error=>showToast(error.message,true));
+      }).catch(error=>showToast(error.message,true));
     });
   }
 })();

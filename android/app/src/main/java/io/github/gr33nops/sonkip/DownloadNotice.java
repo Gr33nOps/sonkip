@@ -8,6 +8,16 @@ import org.json.JSONObject;
 import java.util.Locale;
 
 final class DownloadNotice {
+    static JSONArray currentBatch(JSONArray history,java.util.Set<String> seen) {
+        JSONArray batch=new JSONArray();
+        for(int i=0;i<history.length();i++){
+            JSONObject job=history.optJSONObject(i);if(job==null)continue;
+            String status=job.optString("status"),id=job.optString("id");
+            if(!status.equals("complete") && !status.equals("error"))seen.add(id);
+            if(seen.contains(id))batch.put(job);
+        }
+        return batch;
+    }
     static Notification build(Context context, JSONArray jobs, boolean importing) {
         int saved=0, failed=0, transferring=0, processing=0;
         double progress=0, speed=0;

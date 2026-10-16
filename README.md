@@ -4,7 +4,7 @@
 
 Save public YouTube songs and playlists on your own device. Sonkip runs as a native Android app or a local website on Windows, macOS, and Linux. Your library stays on your device; Sonkip has no accounts or analytics.
 
-[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.2.0/Sonkip-2.2.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.2.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.3.0/Sonkip-2.3.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.3.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
 **Android 7+ · Windows · macOS · Linux**
 
@@ -18,6 +18,9 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 - Paste a public YouTube playlist, Spotify playlist/album, or SoundCloud set. Spotify and SoundCloud provide track names; Sonkip matches those tracks on YouTube and downloads from there. Unmatched tracks are counted separately. Apple Music and other services are not supported yet.
 - Prefer the best **audio-only** source format, falling back to a combined audio/video file when necessary. No re-encoding to MP3/FLAC.
 - Download progress, speed and estimated time; up to two concurrent downloads.
+- Persistent download history, automatic recovery of interrupted jobs when you reopen Sonkip, bounded retries for temporary network failures, and per-song cancellation.
+- Reuse saved songs instead of downloading duplicates. Search and sort your local library.
+- Export and restore a ZIP backup of your music. Android backups also include your custom playlists; authentication files are excluded.
 - SQLite library persisted between restarts; offline playback, file export and deletion.
 - Responsive animated UI with no frontend build tools, tracking cookies, analytics, or CDN JavaScript.
 - Optional local YouTube authentication for content the user is already allowed to access; the session file never leaves the device and can be deleted from the app.
@@ -39,7 +42,7 @@ Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which 
 
 Download an APK from Releases, install it, and open Sonkip. Use Find to search or paste a playlist, Downloads to check progress, and Library to play or export songs. Version 2.1 adds background playback and downloads using Android foreground services. Allow notifications to see download progress; playback controls are available in the notification and on the lock screen. Switching apps does not pause music.
 
-Force-stopping Sonkip or restarting the phone stops active work; unfinished jobs do not resume automatically. Android 15 limits background data-sync time to six hours per day. Some manufacturers apply additional battery restrictions; if downloads stop while the screen is off, check Sonkip's battery settings. Sonkip does not change those settings automatically.
+Force-stopping Sonkip, clearing it from Recents on some phones, or restarting the phone stops active work. Interrupted jobs resume when you reopen Sonkip; cancelled jobs stay cancelled. Partial files are retained for resuming where the source supports it. Use **Downloads → Retry failed** for other failures. Android 15 limits background data-sync time to six hours per day. Some manufacturers apply additional battery restrictions; Sonkip does not change those settings automatically.
 
 Android 7.0 or newer on a 32-bit or 64-bit ARM device is required. Songs are stored in app-private storage. Export files you want to keep elsewhere before uninstalling. Install updates over the existing app to preserve your library. The native app does not currently offer account authentication.
 
@@ -47,9 +50,19 @@ In Library, **Play all** plays songs in download order (oldest first); **Shuffle
 
 Use **My playlists → Create playlist** to choose saved songs. You can also use a song's **More → Add to playlist** menu. Each playlist supports Play, Shuffle, song selection, rename, and delete. Deleting a playlist leaves its audio files in Library. Playlists are saved locally and survive updates; the active playback queue is temporary.
 
+Open **Queue · Repeat · Sleep timer** under the player to move an upcoming song to the front, remove it from the queue, repeat one/all songs, or pause after 15, 30, or 60 minutes. Removing a song from the queue does not delete its file. **Library → Search & sort** filters by song or artist and sorts by title, artist, or download order.
+
+### Back up your music
+
+On Android, choose **Library → Backup & restore → Export music and playlists**, then choose a file location. Keep that ZIP outside Sonkip before uninstalling or switching phones. Restore it through the same menu; existing track IDs and playlists are kept, missing ones are added. Restore needs enough free space for the ZIP and its audio. If a restore is interrupted, you can run it again without duplicating already restored track IDs.
+
+On desktop, open **Saved → Export backup** or **Restore backup**. The ZIP contains readable audio files and `sonkip.json` metadata. Android playlist metadata is included in Android-created backups; the desktop player does not currently manage those playlists. Cookies, sign-in files, temporary downloads, and download history are not exported.
+
 Public downloads use locally generated proof-of-origin tokens. Desktop uses Chrome or Chromium; Android uses an internal WebView behind its native interface. No cookie import is needed for public tracks. Private, restricted, unavailable, or DRM-protected media may still fail.
 
 Matching a playlist can take a minute or more before downloads begin. Spotify's public embed can expose only part of a large playlist; Sonkip reports the number of tracks it could read, not a guaranteed full playlist count. Matches may be different uploads or editions. Sonkip skips candidates with clearly different titles, artists, or versions instead of downloading the first search result.
+
+Matches with missing duration information or weaker title/artist agreement wait for review instead of downloading automatically. On Android, select the matches you want in **Check these matches**; on desktop, review the marked rows and download them individually. Verified artist channels are preferred when other matching checks agree; this is not a guarantee of an identical recording.
 
 ### One-command Windows install
 

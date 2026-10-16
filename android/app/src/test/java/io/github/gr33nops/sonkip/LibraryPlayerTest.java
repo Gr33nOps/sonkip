@@ -12,6 +12,49 @@ import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class) @Config(sdk=28)
 public class LibraryPlayerTest {
+    @Test public void savedSearchResultPlaysExistingAudioInsteadOfSavingAgain()throws Exception {
+        String[] action={null,null};NativeUi ui=new NativeUi(RuntimeEnvironment.getApplication(),(a,v)->{action[0]=a;action[1]=v;});
+        ui.setTracks(new JSONArray("[{\"id\":\"local-song\",\"video_id\":\"abcdefghijk\",\"title\":\"Song\"}]"));
+        ui.setResults(new JSONArray("[{\"video_id\":\"abcdefghijk\",\"title\":\"Song\"}]"));
+        android.widget.Button button=ui.findViewWithTag("save-abcdefghijk");
+        button.performClick();assertEquals("play",action[0]);assertEquals("local-song",action[1]);
+    }
+    @Test public void repeatAndUpcomingEditsKeepCurrentSong() throws Exception {
+        Object q=queue(false);
+        assertNotNull("Queue needs repeat modes", Arrays.stream(q.getClass().getDeclaredMethods()).filter(m->m.getName().equals("setRepeat")).findFirst().orElse(null));
+        call(q,"setRepeat",new Class[]{String.class},"one");
+        assertEquals("a",((JSONObject)call(q,"completed",new Class[]{})).getString("id"));
+        assertEquals("b",((JSONObject)call(q,"next",new Class[]{})).getString("id"));
+        call(q,"setRepeat",new Class[]{String.class},"all");
+        call(q,"next",new Class[]{});
+        assertEquals("a",((JSONObject)call(q,"completed",new Class[]{})).getString("id"));
+        call(q,"moveNext",new Class[]{int.class},1);
+        assertEquals("a",((JSONObject)call(q,"current",new Class[]{})).getString("id"));
+        assertEquals("c",((JSONArray)call(q,"upcoming",new Class[]{})).getJSONObject(0).getString("id"));
+        call(q,"removeUpcoming",new Class[]{int.class},0);
+        assertEquals("b",((JSONObject)call(q,"next",new Class[]{})).getString("id"));
+    }
+
+    @Test public void libraryCanFilterWithoutDeletingSongs() throws Exception {
+        NativeUi ui=new NativeUi(RuntimeEnvironment.getApplication(),(a,v)->{});
+        ui.setTracks(songs());ui.showTab("library");
+        assertNotNull("Library needs search and sort",ui.findViewWithTag("library-filter"));
+        call(ui,"filterLibrary",new Class[]{String.class,String.class},"second","title");
+        assertNotNull(ui.findViewWithTag("play-b"));
+        assertNull(ui.findViewWithTag("play-a"));
+        call(ui,"filterLibrary",new Class[]{String.class,String.class},"","oldest");
+        assertNotNull(ui.findViewWithTag("play-a"));
+        assertNotNull(ui.findViewWithTag("play-c"));
+    }
+
+    @Test public void downloadsExposeCancellationAndRetryFailed()throws Exception {
+        String[] action={null};NativeUi ui=new NativeUi(RuntimeEnvironment.getApplication(),(a,v)->action[0]=a);
+        ui.setJobs(new JSONArray("[{\"id\":\"first\",\"status\":\"queued\"},{\"id\":\"second\",\"status\":\"error\"}]"));
+        ui.showTab("downloads");
+        assertNotNull("Downloads need cancellation",ui.findViewWithTag("cancel-first"));
+        ui.findViewWithTag("cancel-first").performClick();assertEquals("cancel-download",action[0]);
+        ui.findViewWithTag("retry-failed").performClick();assertEquals("retry-failed",action[0]);
+    }
     private Class<?> required(String name) {
         try{return Class.forName("io.github.gr33nops.sonkip."+name);}
         catch(ClassNotFoundException e){fail("Missing library playback component: "+name);return null;}
@@ -59,9 +102,13 @@ public class LibraryPlayerTest {
         assertNotNull(ui.findViewWithTag("library-play-all"));ui.findViewWithTag("library-play-all").performClick();assertEquals("play-all",action[0]);
         ui.findViewWithTag("library-shuffle").performClick();assertEquals("shuffle-all",action[0]);
         ui.findViewWithTag("library-playlists").performClick();assertEquals("playlists",action[0]);
+        assertNotNull("Library needs backup and restore",ui.findViewWithTag("library-backup"));
+        ui.findViewWithTag("library-backup").performClick();assertEquals("library-backup",action[0]);
         ui.playback("First",true,0,10000);
         ui.findViewWithTag("player-next").performClick();assertEquals("next",action[0]);
         ui.findViewWithTag("player-previous").performClick();assertEquals("previous",action[0]);
+        assertNotNull("Player needs a queue/repeat/timer menu",ui.findViewWithTag("player-options"));
+        ui.findViewWithTag("player-options").performClick();assertEquals("player-options",action[0]);
     }
     @Test public void customPlaylistKeepsItsOwnOrderInsteadOfSortingByDownloadDate()throws Exception {
         PlaybackQueue q=new PlaybackQueue(songs(),false,false,new Random(7));

@@ -23,6 +23,19 @@ from app.main import create_app
 VIDEO_ID = "dQw4w9WgXcQ"
 
 
+def test_uncertain_playlist_matches_wait_for_user_review(tmp_path, monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(engine.DownloadManager, '_run', lambda *a: None)
+    monkeypatch.setattr(main, 'extract_playlist', lambda *a: {
+        'title':'Imported mix', 'entries':[{'video_id':VIDEO_ID,'title':'Possible match','needs_review':True}]
+    })
+    with TestClient(create_app(tmp_path), base_url='http://localhost') as client:
+        result=client.post('/api/playlists',json={'url':'https://open.spotify.com/playlist/example'}).json()
+        assert result['count'] == 0
+        assert result['review'][0]['video_id'] == VIDEO_ID
+        assert client.get('/api/jobs').json()['jobs'] == []
+
+
 class FakeYoutubeDL:
     def __init__(self, opts):
         self.opts = opts
@@ -124,7 +137,7 @@ def test_large_playlist_jobs_remain_available(monkeypatch, tmp_path):
     manager = engine.DownloadManager(MusicStore(tmp_path))
     # Prevent network work while exercising the real queue and retention.
     monkeypatch.setattr(manager, "_run", lambda *args: None)
-    jobs = [manager.start(VIDEO_ID) for _ in range(125)]
+    jobs = [manager.start(f'{index:011d}') for index in range(125)]
     assert len(set(jobs)) == 125
     for job_id in jobs:
         manager._update(job_id, status="complete")

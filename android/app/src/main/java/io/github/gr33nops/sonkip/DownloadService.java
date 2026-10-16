@@ -18,6 +18,7 @@ public class DownloadService extends Service {
     private PowerManager.WakeLock wake;
     private boolean destroyed;
     private int failures;
+    private final java.util.Set<String> sessionJobs=new java.util.HashSet<>();
 
     static void begin(Context context) {
         pending.incrementAndGet();
@@ -49,7 +50,7 @@ public class DownloadService extends Service {
             connection.setConnectTimeout(3000); connection.setReadTimeout(5000);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             try (InputStream input = connection.getInputStream()) { byte[] b = new byte[8192]; int n; while ((n = input.read(b)) != -1) bytes.write(b, 0, n); }
-            JSONArray jobs = new org.json.JSONObject(bytes.toString("UTF-8")).getJSONArray("jobs");
+            JSONArray jobs = DownloadNotice.currentBatch(new org.json.JSONObject(bytes.toString("UTF-8")).getJSONArray("jobs"),sessionJobs);
             int active = 0, done = 0, errors = 0;
             for (int i = 0; i < jobs.length(); i++) {
                 String status = jobs.getJSONObject(i).optString("status");

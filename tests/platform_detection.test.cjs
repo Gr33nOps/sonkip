@@ -23,7 +23,7 @@ test('returns the matching download and setup command', () => {
   assert.deepEqual(getPlatformDownload('android'), {
     label: 'ANDROID',
     button: 'DOWNLOAD FOR ANDROID (.APK)',
-    href: 'https://github.com/Gr33nOps/sonkip/releases/download/v2.2.0/Sonkip-2.2.0.apk',
+    href: 'https://github.com/Gr33nOps/sonkip/releases/download/v2.3.0/Sonkip-2.3.0.apk',
     commandLabel: '',
     command: '',
   });

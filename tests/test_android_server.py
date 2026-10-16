@@ -4,6 +4,9 @@ import urllib.request
 from pathlib import Path
 
 from app.android_server import create_android_server
+from fastapi.testclient import TestClient
+from app.main import create_app
+import pytest
 
 
 def request_json(url: str, method: str = "GET", body: dict | None = None):
@@ -14,8 +17,47 @@ def request_json(url: str, method: str = "GET", body: dict | None = None):
         method=method,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=3) as response:
+    # Leave room for SQLite's 15-second busy timeout on a loaded build host.
+    with urllib.request.urlopen(request, timeout=20) as response:
         return response.status, json.load(response)
+
+
+@pytest.mark.parametrize('platform', ['desktop', 'android'])
+def test_download_actions_are_available_on_both_platforms(tmp_path, monkeypatch, platform):
+    server = None
+    if platform == 'android':
+        server = create_android_server(tmp_path, tmp_path, port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        manager = server.manager
+        def post(path):
+            return request_json(f'http://127.0.0.1:{server.server_port}' + path, 'POST', {})[1]
+    else:
+        app = create_app(tmp_path)
+        client = TestClient(app, base_url='http://localhost')
+        manager = app.state.manager
+        def post(path):
+            response = client.post(path, json={})
+            assert response.status_code == 200
+            return response.json()
+    monkeypatch.setattr(manager, '_run', lambda *args: None)
+    try:
+        first = manager.start('dQw4w9WgXcQ')
+        assert post(f'/api/jobs/{first}/cancel')['ok'] is True
+        second = manager.start('M7lc1UVf-VE')
+        manager.futures[second].result(timeout=3)
+        manager._update(second, status='error', error='Connection lost')
+        result = post('/api/jobs/retry-failed')
+        assert result['job_ids'] == [second]
+        assert manager.get_job(first)['cancelled'] is True
+        assert manager.get_job(second)['status'] == 'queued'
+    finally:
+        manager.pool.shutdown(wait=True)
+        if server:
+            server.shutdown()
+            server.server_close()
+        else:
+            client.close()
 
 
 def test_android_server_serves_health_and_frontend(tmp_path: Path):

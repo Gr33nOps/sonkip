@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
     private boolean ready, active, importing;
     private String exportId;
     private PlaylistStore playlists;
+    private boolean backupBusy;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -62,7 +63,7 @@ public class MainActivity extends Activity {
             for(int attempt=0;attempt<100 && !isDestroyed();attempt++) {
                 try {
                     request("GET","/api/health",null);
-                    main.post(() -> {ready=true; ui.notice("Local library ready · no account needed",false); refresh();});
+                    main.post(() -> {ready=true; ui.notice("Local library ready · no account needed",false); downloadAction("/api/jobs/resume-interrupted");refresh();});
                     return;
                 } catch(Exception ignored) {
                     if(backendError!=null) break;
@@ -123,6 +124,11 @@ public class MainActivity extends Activity {
                 case "play-all": PlaybackService.playQueue(this,tracks,false,true);break;
                 case "shuffle-all": PlaybackService.playQueue(this,tracks,true,true);break;
                 case "playlists": showPlaylists(null);break;
+                case "library-filter": filterLibrary();break;
+                case "library-backup": backupMenu();break;
+                case "player-options": playerOptions();break;
+                case "retry-failed": downloadAction("/api/jobs/retry-failed");break;
+                case "cancel-download": downloadAction("/api/jobs/"+value+"/cancel");break;
                 case "next": if(PlaybackService.current!=null)PlaybackService.current.next();break;
                 case "previous": if(PlaybackService.current!=null)PlaybackService.current.previous();break;
                 case "toggle": if(PlaybackService.current!=null) {PlaybackService.current.toggle();updatePlayer();} break;
@@ -149,7 +155,20 @@ public class MainActivity extends Activity {
                 main.post(() -> {
                     if(isDestroyed())return;
                     importing=false; ui.setBusy(false);
-                    if(playlist) {ui.remember(result.optJSONArray("jobs"));ui.showTab("downloads");ui.notice(result.optInt("count")+" queued · "+result.optJSONArray("unmatched").length()+" skipped"+(result.optString("notice").isEmpty()?"":" · YouTube matches; versions may differ"),false);}
+                    if(playlist) {
+                        ui.remember(result.optJSONArray("jobs"));ui.showTab("downloads");
+                        ui.notice(result.optInt("count")+" queued · "+result.optJSONArray("unmatched").length()+" skipped"+(result.optString("notice").isEmpty()?"":" · YouTube matches; versions may differ"),false);
+                        JSONArray review=result.optJSONArray("review");
+                        if(review!=null && review.length()>0){
+                            String[] labels=new String[review.length()];boolean[] selected=new boolean[review.length()];
+                            for(int i=0;i<labels.length;i++){JSONObject song=review.optJSONObject(i);labels[i]=song.optString("source_title",song.optString("title"))+" → "+song.optString("title")+" · "+song.optString("artist");}
+                            new AlertDialog.Builder(this).setTitle("Check these matches")
+                                .setMultiChoiceItems(labels,selected,(dialog,index,checked)->selected[index]=checked)
+                                .setPositiveButton("Save selected",(dialog,w)->{for(int i=0;i<selected.length;i++)if(selected[i])save(review.optJSONObject(i).optString("video_id"));})
+                                .setNeutralButton("Review in Find",(dialog,w)->{ui.setResults(review);ui.showTab("find");ui.notice("These matches are uncertain. Check title and artist before saving.",false);})
+                                .setNegativeButton("Skip",null).show();
+                        }
+                    }
                     else {JSONArray songs=result.optJSONArray("results");ui.setResults(songs);ui.notice(songs.length()==0?"No matches. Try another song or artist.":"Choose a song to save on your phone.",false);}
                     refresh();
                 });
@@ -164,6 +183,90 @@ public class MainActivity extends Activity {
             catch(Exception error) {main.post(() -> ui.notice(error.getMessage(),true));}
             finally {DownloadService.end();}
         });
+    }
+    private void downloadAction(String path) {
+        DownloadService.begin(this);
+        requests.execute(()->{
+            try {request("POST",path,new JSONObject());main.post(this::refresh);}
+            catch(Exception error){main.post(()->ui.notice(error.getMessage(),true));}
+            finally{DownloadService.end();}
+        });
+    }
+    private void filterLibrary() {
+        android.widget.LinearLayout form=new android.widget.LinearLayout(this);form.setOrientation(android.widget.LinearLayout.VERTICAL);
+        android.widget.EditText query=new android.widget.EditText(this);query.setHint("Song or artist");query.setSingleLine(true);form.addView(query);
+        android.widget.Spinner sort=new android.widget.Spinner(this);
+        sort.setAdapter(new android.widget.ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Newest downloads","Oldest downloads","Song title","Artist"}));form.addView(sort);
+        new AlertDialog.Builder(this).setTitle("Search your library").setView(form)
+            .setPositiveButton("Apply",(d,w)->ui.filterLibrary(query.getText().toString(),new String[]{"newest","oldest","title","artist"}[sort.getSelectedItemPosition()]))
+            .setNeutralButton("Clear",(d,w)->ui.filterLibrary("","newest")).setNegativeButton("Cancel",null).show();
+    }
+    private void playerOptions() {
+        PlaybackService service=PlaybackService.current;if(service==null)return;
+        new AlertDialog.Builder(this).setTitle("Playback").setItems(new String[]{"Upcoming songs","Repeat","Sleep timer"},(d,which)->{
+            if(which==0)showUpcoming(service);
+            else if(which==1)new AlertDialog.Builder(this).setTitle("Repeat").setItems(new String[]{"Off","One song","All songs"},(r,index)->{
+                service.repeat(new String[]{"off","one","all"}[index]);ui.notice("Repeat: "+new String[]{"off","one song","all songs"}[index],false);
+            }).show();
+            else new AlertDialog.Builder(this).setTitle("Sleep timer").setItems(new String[]{"Off","15 minutes","30 minutes","60 minutes"},(r,index)->{
+                service.sleepAfter(new int[]{0,15,30,60}[index]);ui.notice(index==0?"Sleep timer off":"Music will pause in "+new int[]{0,15,30,60}[index]+" minutes",false);
+            }).show();
+        }).show();
+    }
+    private void backupMenu() {
+        if(backupBusy){ui.notice("A backup operation is already running.",false);return;}
+        new AlertDialog.Builder(this).setTitle("Backup & restore").setItems(new String[]{"Export music and playlists","Restore a Sonkip ZIP"},(d,which)->{
+            Intent picker=new Intent(which==0?Intent.ACTION_CREATE_DOCUMENT:Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip");
+            if(which==0){picker.putExtra(Intent.EXTRA_TITLE,"Sonkip-backup.zip");startActivityForResult(picker,43);}
+            else new AlertDialog.Builder(this).setTitle("Restore backup?").setMessage("Adds missing songs and playlists. Existing songs are kept. Make sure you have space for the ZIP and its audio files.")
+                .setPositiveButton("Choose ZIP",(r,w)->startActivityForResult(picker,44)).setNegativeButton("Cancel",null).show();
+        }).show();
+    }
+    private void transferBackup(Uri uri,boolean restore) {
+        if(backupBusy)return;backupBusy=true;DownloadService.begin(this);
+        ui.notice(restore?"Restoring your library…":"Creating your backup…",false);
+        requests.execute(()->{
+            File temporary=null;
+            try {
+                temporary=File.createTempFile("sonkip-backup-",".zip",getCacheDir());
+                Python python=Python.getInstance();
+                PyObject store=python.getModule("app.storage").callAttr("MusicStore",python.getModule("pathlib").callAttr("Path",new File(getFilesDir(),"music").getAbsolutePath()));
+                if(restore){
+                    try(InputStream input=getContentResolver().openInputStream(uri);OutputStream output=new FileOutputStream(temporary)){copy(input,output);}
+                    PyObject result=store.callAttr("import_backup",temporary.getAbsolutePath());
+                    JSONObject restored=new JSONObject(python.getModule("json").callAttr("dumps",result).toString());
+                    java.util.Set<String> existing=new java.util.HashSet<>();JSONArray saved=playlists.list();
+                    for(int i=0;i<saved.length();i++)existing.add(saved.getJSONObject(i).getString("id"));
+                    JSONArray imported=restored.getJSONArray("playlists");
+                    for(int i=0;i<imported.length();i++){JSONObject item=imported.getJSONObject(i);if(!existing.contains(item.getString("id")))playlists.save(item.getString("id"),item.getString("name"),item.getJSONArray("tracks"));}
+                    main.post(()->{ui.notice("Backup restored",false);refresh();});
+                }else{
+                    store.callAttr("export_backup",temporary.getAbsolutePath(),python.getModule("json").callAttr("loads",playlists.list().toString()));
+                    try(InputStream input=new FileInputStream(temporary);OutputStream output=getContentResolver().openOutputStream(uri,"wt")){copy(input,output);}
+                    main.post(()->ui.notice("Backup saved · audio and playlists included",false));
+                }
+            }catch(Exception error){main.post(()->ui.notice("Backup failed: "+error.getMessage(),true));}
+            finally{if(temporary!=null)temporary.delete();DownloadService.end();main.post(()->backupBusy=false);}
+        });
+    }
+    private static void copy(InputStream input,OutputStream output)throws IOException {
+        if(input==null || output==null)throw new IOException("Could not open the selected file");
+        byte[] buffer=new byte[65536];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);
+    }
+    private void showUpcoming(PlaybackService service) {
+        JSONArray songs=service.upcoming();
+        if(songs.length()==0){ui.notice("No songs after this one. Play a library or playlist to build a queue.",false);return;}
+        String[] labels=new String[songs.length()];for(int i=0;i<labels.length;i++)labels[i]=songs.optJSONObject(i).optString("title","Untitled");
+        new AlertDialog.Builder(this).setTitle("Upcoming songs").setItems(labels,(d,index)->{
+            String id=songs.optJSONObject(index).optString("id");
+            new AlertDialog.Builder(this).setTitle(labels[index]).setItems(new String[]{"Play next","Remove from queue"},(r,choice)->{
+                // Playback can advance while the dialog is open. Resolve the ID again.
+                JSONArray current=service.upcoming();for(int i=0;i<current.length();i++)if(current.optJSONObject(i).optString("id").equals(id)){
+                    if(choice==0)service.moveNext(i);else service.removeUpcoming(i);break;
+                }
+                showUpcoming(service);
+            }).show();
+        }).setNegativeButton("Close",null).show();
     }
     private void refresh() {
         if(!ready || isDestroyed() || !refreshing.compareAndSet(false,true))return;
@@ -266,6 +369,7 @@ public class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int code,int result,Intent data) {
         super.onActivityResult(code,result,data);
+        if((code==43 || code==44) && result==RESULT_OK && data!=null && data.getData()!=null){transferBackup(data.getData(),code==44);return;}
         if(code!=41 || result!=RESULT_OK || data==null || data.getData()==null)return;
         String id=exportId;Uri destination=data.getData();ui.notice("Exporting audio…",false);
         requests.execute(() -> {

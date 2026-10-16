@@ -5,6 +5,9 @@ import re
 import os
 import shutil
 import sqlite3
+import json
+import uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -34,9 +37,84 @@ class MusicStore:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            db.execute('CREATE TABLE IF NOT EXISTS download_jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
         for track in self.list_tracks():
-            if FILENAME_RE.fullmatch(track['filename']):
+            repeated = f"{track['artist']} - {track['artist']} - ".casefold()
+            if FILENAME_RE.fullmatch(track['filename']) or track['filename'].casefold().startswith(repeated):
                 self._name_audio(track)
+
+    def save_job(self, job: dict[str, Any]) -> None:
+        with self._connect() as db:
+            db.execute('INSERT OR REPLACE INTO download_jobs (id, payload) VALUES (?, ?)',
+                       (job['id'], json.dumps(job)))
+
+    def export_backup(self, destination: Path, playlists=None) -> None:
+        tracks = self.list_tracks()
+        with zipfile.ZipFile(destination, 'w', compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+            archive.writestr('sonkip.json', json.dumps({'version': 1, 'tracks': tracks, 'playlists': playlists or []}, ensure_ascii=False))
+            for track in tracks:
+                archive.write(self.path_for(track), 'tracks/' + track['filename'])
+
+    def import_backup(self, source: Path) -> dict:
+        with zipfile.ZipFile(source) as archive:
+            if archive.getinfo('sonkip.json').file_size > 16 * 1024 * 1024:
+                raise ValueError('Backup metadata is too large')
+            manifest = json.loads(archive.read('sonkip.json'))
+            if manifest.get('version') != 1 or not isinstance(manifest.get('tracks'), list):
+                raise ValueError('Choose a Sonkip backup ZIP')
+            playlists = manifest.get('playlists', [])
+            if not isinstance(playlists, list):
+                raise ValueError('Invalid playlists in backup')
+            for playlist in playlists:
+                if (not isinstance(playlist, dict) or not isinstance(playlist.get('id'), str)
+                    or not isinstance(playlist.get('name'), str) or not 1 <= len(playlist['name'].strip()) <= 80
+                    or not isinstance(playlist.get('tracks'), list)
+                    or any(not isinstance(value, str) or not re.fullmatch('[0-9a-f]{32}', value) for value in playlist['tracks'])):
+                    raise ValueError('Invalid playlist in backup')
+            seen = set()
+            total = 0
+            for track in manifest['tracks']:
+                if (not isinstance(track, dict) or not re.fullmatch('[0-9a-f]{32}', str(track.get('id', '')))
+                    or not re.fullmatch('[A-Za-z0-9_-]{11}', str(track.get('video_id', '')))
+                    or not re.fullmatch('[a-zA-Z0-9]{1,8}', str(track.get('extension', '')))
+                    or not isinstance(track.get('title'), str) or not isinstance(track.get('artist'), str)):
+                    raise ValueError('Invalid song in backup')
+                self.path_for(track)  # Validate names before writing any audio.
+                if track['id'] in seen:
+                    raise ValueError('Duplicate song ID in backup')
+                seen.add(track['id'])
+                info = archive.getinfo('tracks/' + track['filename'])
+                if info.file_size > 4 * 1024 ** 3 or info.file_size <= 0:
+                    raise ValueError('Invalid audio size in backup')
+                total += info.file_size
+                existing = self.get_track(track['id'])
+                if existing and existing['video_id'] != track['video_id']:
+                    raise ValueError('Backup song ID conflicts with this library')
+            if total > shutil.disk_usage(self.home).free:
+                raise ValueError('Not enough free space to restore this backup')
+            imported = 0
+            for original in manifest['tracks']:
+                if self.get_track(original['id']):
+                    continue
+                track = dict(original)
+                target = self.tracks_dir / (uuid.uuid4().hex + '.' + track['extension'])
+                try:
+                    with archive.open('tracks/' + track['filename']) as audio, target.open('xb') as output:
+                        shutil.copyfileobj(audio, output, 1024 * 1024)
+                    track.update(filename=target.name, bytes=target.stat().st_size)
+                    self.add_track(track)
+                    if isinstance(track.get('created_at'), str):
+                        with self._connect() as db:
+                            db.execute('UPDATE tracks SET created_at=? WHERE id=?', (track['created_at'], track['id']))
+                    imported += 1
+                finally:
+                    target.unlink(missing_ok=True)
+        return {'imported': imported, 'playlists': playlists}
+
+    def load_jobs(self) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute('SELECT payload FROM download_jobs ORDER BY rowid').fetchall()
+        return sorted((json.loads(row['payload']) for row in rows), key=lambda job: job['created_at'])
 
     def youtube_auth_connected(self) -> bool:
         return self.youtube_cookies_path.is_file()
@@ -96,6 +174,7 @@ class MusicStore:
             return
         title = str(track.get('title') or 'Untitled')
         artist = str(track.get('artist') or 'Unknown artist')
+        title = re.sub(r'^' + re.escape(artist) + r'\s*[-–—:]\s*', '', title, count=1, flags=re.IGNORECASE).strip() or title
         stem = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', '_', artist + ' - ' + title)
         stem = ' '.join(stem.split()).strip(' .')
         stem = stem.encode('utf-8')[:170].decode('utf-8', errors='ignore').rstrip(' .') or 'Untitled'

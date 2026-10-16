@@ -15,3 +15,27 @@ for (const [local, expected] of [[true, track.id], [false, track.video_id]]) {
     assert.equal(html.match(/data-is-local="([^"]+)"/)[1], local ? '1' : '0');
   });
 }
+
+test('active downloads expose cancellation for the actual job', () => {
+  const context = {state: {activeJobs: new Map([[track.video_id, {id:'job123',status:'downloading',percent:42}]]), library: [], currentlyPlaying:null},track};
+  const html=vm.runInNewContext(functions+'\nrenderTrackRow(track,false)',context);
+  assert.match(html,/data-cancel-job="job123"/);
+});
+
+test('library filtering searches artists and sorts without mutating the library', () => {
+  const start=source.indexOf('  function filteredLibrary(');
+  const context={state:{library:[{id:'b',title:'Zulu',artist:'Band'},{id:'a',title:'Alpha',artist:'Band'},{id:'c',title:'Else',artist:'Other'}],libraryQuery:'band',librarySort:'title'}};
+  vm.runInNewContext(start<0?'':source.slice(start,source.indexOf('  // --- Rendering ---')),context);
+  assert.equal(typeof context.filteredLibrary,'function');
+  assert.deepEqual(Array.from(context.filteredLibrary(),t=>t.id),['a','b']);
+  assert.equal(context.state.library[0].id,'b');
+});
+
+test('opening download history twice never creates duplicate pollers', () => {
+  let timers=0;
+  const code=source.slice(source.indexOf('  function pollJob('),source.indexOf('  function triggerBrowserDownload('));
+  const context={state:{jobPollers:new Map()},setInterval:()=>++timers};
+  vm.runInNewContext(code,context);
+  context.pollJob('one','video','Song');context.pollJob('one','video','Song');
+  assert.equal(timers,1);
+});

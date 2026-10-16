@@ -13,6 +13,17 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28)
 public class DownloadNoticeTest {
+    @Test public void oldDownloadHistoryDoesNotInflateCurrentProgress()throws Exception {
+        java.lang.reflect.Method filter=java.util.Arrays.stream(DownloadNotice.class.getDeclaredMethods()).filter(m->m.getName().equals("currentBatch")).findFirst().orElse(null);
+        assertNotNull("Persistent history must not count toward the current batch",filter);
+        java.util.Set<String> seen=new java.util.HashSet<>();
+        JSONArray selected=(JSONArray)filter.invoke(null,new JSONArray("[{\"id\":\"old\",\"status\":\"complete\"},{\"id\":\"new\",\"status\":\"downloading\",\"percent\":20}]"),seen);
+        assertEquals(1,selected.length());
+        Notification first=DownloadNotice.build(RuntimeEnvironment.getApplication(),selected,false);
+        assertEquals(20,first.extras.getInt(Notification.EXTRA_PROGRESS));
+        selected=(JSONArray)filter.invoke(null,new JSONArray("[{\"id\":\"old\",\"status\":\"complete\"},{\"id\":\"new\",\"status\":\"complete\"}]"),seen);
+        assertEquals(1,selected.length());assertEquals("new",selected.getJSONObject(0).getString("id"));
+    }
     private Notification notice(String jobs, boolean importing) throws Exception {
         Class<?> type;
         try { type=Class.forName("io.github.gr33nops.sonkip.DownloadNotice"); }

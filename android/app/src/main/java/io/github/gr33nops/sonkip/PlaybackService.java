@@ -23,6 +23,8 @@ public class PlaybackService extends Service {
     private AudioManager audio;
     private AudioFocusRequest focus;
     private boolean prepared, resumeOnFocus;
+    private String repeatMode="off";
+    private final Runnable sleepStop=()->pause();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable idleStop = () -> { if (!isPlaying()) stopSelf(); };
     private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
@@ -83,7 +85,7 @@ public class PlaybackService extends Service {
         else if ("next".equals(action)) next();
         else if ("previous".equals(action)) previous();
         else if ("queue".equals(action)) {
-            if(pendingQueue!=null){queue=pendingQueue;pendingQueue=null;open(queue.current());}
+            if(pendingQueue!=null){queue=pendingQueue;queue.setRepeat(repeatMode);pendingQueue=null;open(queue.current());}
         }
         else if ("play".equals(action)) {
             queue=null;
@@ -106,7 +108,7 @@ public class PlaybackService extends Service {
                 if (trackId == null || !trackId.matches("[0-9a-f]{32}")) throw new IllegalArgumentException("Invalid saved song");
                 player.setDataSource(this, Uri.parse("http://127.0.0.1:8765/api/tracks/" + trackId + "/audio"));
                 player.setOnPreparedListener(p -> { if (p == player) { prepared = true; resume(); } });
-                player.setOnCompletionListener(p -> {if(p==player)next();});
+                player.setOnCompletionListener(p -> {if(p==player){if(queue!=null)open(queue.completed());else if(repeatMode.equals("one") || repeatMode.equals("all")){seek(0);resume();}else pause();}});
                 player.setOnErrorListener((p, what, extra) -> { if(p==player)failPlayback(); return true; });
                 player.prepareAsync();
             } catch (Exception e) { failPlayback(); }
@@ -114,11 +116,18 @@ public class PlaybackService extends Service {
     private void failPlayback() {
         error = "A song could not be played. Try exporting it to another player.";
         prepared=false;
+        // Do not loop forever over corrupt files when repeat-all is enabled.
+        if(queue!=null)queue.setRepeat("off");
         JSONObject following=queue==null?null:queue.next();
         if(following==null)stopSelf();else handler.post(()->open(following));
     }
     void next(){JSONObject following=queue==null?null:queue.next();if(following==null)pause();else open(following);}
     void previous(){if(position()>3000){seek(0);return;}if(queue!=null)open(queue.previous());else seek(0);}
+    void repeat(String mode){if(!java.util.Arrays.asList("off","one","all").contains(mode))throw new IllegalArgumentException("Unknown repeat mode");repeatMode=mode;if(queue!=null)queue.setRepeat(mode);publish();}
+    void sleepAfter(int minutes){if(minutes<0 || minutes>180)throw new IllegalArgumentException("Choose a timer up to three hours");handler.removeCallbacks(sleepStop);if(minutes>0)handler.postDelayed(sleepStop,minutes*60000L);}
+    JSONArray upcoming(){return queue==null?new JSONArray():queue.upcoming();}
+    void moveNext(int position){if(queue!=null)queue.moveNext(position);publish();}
+    void removeUpcoming(int position){if(queue!=null)queue.removeUpcoming(position);publish();}
     String queueDescription(){return queue==null?"Saved on this phone":queue.description();}
     boolean isPlaying() { return prepared && player != null && player.isPlaying(); }
     boolean isPrepared() { return prepared; }

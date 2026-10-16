@@ -1059,3 +1059,7 @@ a {
     animation: none !important;
   }
 }
+:root .library-tools { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:18px 0; }
+:root .library-tools[hidden] { display:none; }
+.library-tools input[type="search"] { flex:1; min-width:180px; }
+.library-tools input, .library-tools select, .library-tools button { font:inherit; padding:10px 14px; color:inherit; background:transparent; border:1px solid currentColor; border-radius:2px; }

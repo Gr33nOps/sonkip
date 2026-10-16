@@ -48,3 +48,24 @@ def test_existing_uuid_library_migrates_without_changing_ids(tmp_path):
 def test_readable_names_still_reject_path_traversal(tmp_path, filename):
     with pytest.raises(ValueError):
         MusicStore(tmp_path).path_for({'filename': filename})
+
+
+def test_artist_is_not_repeated_in_downloaded_filename(tmp_path):
+    store=MusicStore(tmp_path)
+    store.add_track(track(store, title='Artist - Song'))
+    assert store.list_tracks()[0]['filename'] == 'Artist - Song.webm'
+
+
+def test_old_repeated_artist_filename_is_migrated_once(tmp_path):
+    store=MusicStore(tmp_path)
+    row=track(store, title='Artist - Song')
+    old='Artist - Artist - Song.webm'
+    (store.tracks_dir/row['filename']).rename(store.tracks_dir/old)
+    row['filename']=old
+    with sqlite3.connect(store.db_path) as db:
+        db.execute('INSERT INTO tracks (id,video_id,title,artist,duration,filename,bytes,extension,codec,abr) VALUES (?,?,?,?,?,?,?,?,?,?)',tuple(row.values()))
+    reopened=MusicStore(tmp_path)
+    assert reopened.get_track(row['id'])['filename'] == 'Artist - Song.webm'
+    again=MusicStore(tmp_path)
+    assert again.get_track(row['id'])['filename'] == 'Artist - Song.webm'
+    assert again.path_for(again.get_track(row['id'])).read_bytes() == b'audio'

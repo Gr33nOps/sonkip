@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.3.0
+
+- Persist download jobs and recover interrupted work on reopening, retaining partial files where supported.
+- Add cancellation, bounded transient retries, and Retry failed; reuse saved or already queued songs.
+- Fix repeated-artist filenames and partial fragments being mistaken for finished audio.
+- Add library search/sorting and ZIP backup/restore; Android backups include local playlists.
+- Add Android repeat modes, upcoming-queue editing, and a sleep timer.
+- Hold uncertain playlist matches for review and keep download notification progress scoped to the current batch.
+- Update the website's Android download to 2.3.0. See [release notes](docs/releases/2.3.0.md) for verification and limitations.
+
 ## 2.2.0
 
 - Added Play all in oldest-to-newest download order and library-wide Shuffle.

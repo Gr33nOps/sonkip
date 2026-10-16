@@ -211,6 +211,20 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         body = self._body()
+        if path == '/api/jobs/resume-interrupted':
+            self._json(HTTPStatus.OK, {'job_ids': self.server.manager.resume_interrupted()})
+            return
+        if path == '/api/jobs/retry-failed':
+            self._json(HTTPStatus.OK, {'job_ids': self.server.manager.retry_failed()})
+            return
+        cancel_match = re.fullmatch(r'/api/jobs/([0-9a-f]{32})/cancel', path)
+        if cancel_match:
+            try:
+                self.server.manager.cancel(cancel_match.group(1))
+                self._json(HTTPStatus.OK, {'ok': True})
+            except ValueError as exc:
+                self._json(HTTPStatus.NOT_FOUND, {'detail': str(exc)})
+            return
         if path == "/api/downloads":
             try:
                 job_id = self.server.manager.start(str(body.get("video_id", "")))
@@ -238,6 +252,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                 jobs = [
                     {**entry, "job_id": self.server.manager.start(entry["video_id"])}
                     for entry in playlist["entries"]
+                    if not entry.get('needs_review')
                 ]
             except ValueError as exc:
                 self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": str(exc)})
@@ -249,6 +264,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                 self._json(
                     HTTPStatus.ACCEPTED,
                     {"title": playlist["title"], "count": len(jobs), "jobs": jobs,
+                     "review": [entry for entry in playlist['entries'] if entry.get('needs_review')],
                      "unmatched": playlist.get("unmatched", []), "notice": playlist.get("notice", ""),
                      "source_count": playlist.get("source_count", len(jobs))},
                 )
