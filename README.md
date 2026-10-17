@@ -4,11 +4,13 @@
 
 Save public YouTube songs and playlists on your own device. Sonkip runs as a native Android app or a local website on Windows, macOS, and Linux. Your library stays on your device; Sonkip has no accounts or analytics.
 
-[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.3.0/Sonkip-2.3.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.3.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.3.1/Sonkip-2.3.1.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.3.1) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
 **Android 7+ · Windows · macOS · Linux**
 
 Android includes local playlists, shuffle, ordered playback, and background playback/download services. The desktop version runs in your browser on localhost. Downloads preserve the source audio format; they are not converted to MP3.
+
+Use **Library → Music folder** to copy existing and future songs into a folder other music players can scan. Sonkip keeps its internal library copy as well. Changing or disabling this setting does not delete copies already placed in earlier folders.
 
 The GitHub Pages site is a static project page. The downloader intentionally runs on your own computer so searches, audio files, and library data are never sent to a sonkip server.
 

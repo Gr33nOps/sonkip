@@ -1063,3 +1063,7 @@ a {
 :root .library-tools[hidden] { display:none; }
 .library-tools input[type="search"] { flex:1; min-width:180px; }
 .library-tools input, .library-tools select, .library-tools button { font:inherit; padding:10px 14px; color:inherit; background:transparent; border:1px solid currentColor; border-radius:2px; }
+ #folder-dialog { max-width: 560px; width: calc(100% - 32px); max-height: calc(100% - 32px); overflow: auto; margin: auto; padding: 24px; border: 1px solid #171717; background: #f4f1e9; color: #171717; }
+ #folder-dialog::backdrop { background: #0009; }
+ #folder-dialog input { display: block; width: 100%; margin: 12px 0; padding: 12px; }
+ #folder-dialog button { padding: 10px 14px; margin: 6px 4px 0 0; cursor: pointer; }

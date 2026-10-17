@@ -18,6 +18,7 @@ public class DownloadService extends Service {
     private PowerManager.WakeLock wake;
     private boolean destroyed;
     private int failures;
+    private int lastFolderSyncCompleted = -1;
     private final java.util.Set<String> sessionJobs=new java.util.HashSet<>();
 
     static void begin(Context context) {
@@ -28,6 +29,7 @@ public class DownloadService extends Service {
         } catch (RuntimeException e) { pending.decrementAndGet(); throw e; }
     }
     static void end() { pending.updateAndGet(n -> Math.max(0, n - 1)); }
+    static boolean shouldSyncFolder(int previousCompleted, int completed) { return previousCompleted != completed; }
     @Override public void onCreate() {
         super.onCreate();
         if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager.class).createNotificationChannel(
@@ -55,6 +57,10 @@ public class DownloadService extends Service {
             for (int i = 0; i < jobs.length(); i++) {
                 String status = jobs.getJSONObject(i).optString("status");
                 if (status.equals("complete")) done++; else if (status.equals("error")) errors++; else active++;
+            }
+            if(shouldSyncFolder(lastFolderSyncCompleted,done)) {
+                MusicFolder.sync(this);
+                lastFolderSyncCompleted=done;
             }
             final int remaining = active, completed = done, failed = errors;
             main.post(() -> {

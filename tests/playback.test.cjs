@@ -7,6 +7,14 @@ const source = fs.readFileSync(path.join(__dirname, '../static/app.js'), 'utf8')
 const functions = source.slice(source.indexOf('  function safe('), source.indexOf('  function formatTime('))
   + source.slice(source.indexOf('  function renderTrackRow('), source.indexOf('  // --- Search ---'));
 const track = {id: '0123456789abcdef0123456789abcdef', video_id: 'NMRhx71bGo4', title: 'Let It Happen', artist: 'Tame Impala', extension: 'webm'};
+test('completed downloads do not also save to browser Downloads when a music folder is configured', async () => {
+  let tick, exports=0;
+  const code=source.slice(source.indexOf('  function pollJob('),source.indexOf('  function triggerBrowserDownload('));
+  const context={state:{jobPollers:new Map(),activeJobs:new Map(),musicFolder:'D:/Music'},setInterval:fn=>{tick=fn;return 1;},clearInterval:()=>{},
+    api:async()=>({status:'complete',track_id:'song',percent:100}),loadLibrary:async()=>{},render:()=>{},showToast:()=>{},triggerBrowserDownload:()=>exports++};
+  vm.runInNewContext(code,context);context.pollJob('job','video','Song');await tick();
+  assert.equal(exports,0);
+});
 for (const [local, expected] of [[true, track.id], [false, track.video_id]]) {
   test(`${local ? 'saved' : 'search'} play button targets the correct identifier`, () => {
     const context = {state: {activeJobs: new Map(), library: [track], currentlyPlaying: null, isPlaying: false}, track, local};

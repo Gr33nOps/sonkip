@@ -148,9 +148,17 @@
           <select id="library-sort" aria-label="Sort library"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Song title</option><option value="artist">Artist</option></select>
           <a href="/api/backup" class="text-link">Export backup ↓</a>
           <button id="restore-backup" type="button">Restore backup</button>
+          <button id="music-folder" type="button">Music folder</button>
           <input id="backup-file" type="file" accept=".zip,application/zip" hidden />
         </div>
         <div class="library-tools"><button id="show-downloads" type="button">Download history</button><button id="retry-failed" type="button">Retry failed</button></div>
+        <dialog id="folder-dialog">
+          <form method="dialog"><h2>Music folder</h2><p>Copy existing and future songs here for other music players. Sonkip keeps its own library copy too. Changing folders won’t delete earlier copies.</p>
+            <label for="folder-path">Full folder path</label><input id="folder-path" type="text" placeholder="Choose a folder or paste its full path" />
+            <p id="folder-status" role="status"></p>
+            <button id="folder-browse" type="button">Browse…</button><button id="folder-save" type="button">Save folder</button><button id="folder-disable" type="button">Stop copying</button><button>Close</button>
+          </form>
+        </dialog>
         <div id="track-list" class="track-list" aria-live="polite"></div>
         <div id="status-message" class="status-message" hidden></div>
       </section>

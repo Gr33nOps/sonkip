@@ -8,6 +8,7 @@ import sqlite3
 import json
 import uuid
 import zipfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ FILENAME_RE = re.compile(r"^[0-9a-f]{32}\.[A-Za-z0-9]+$")
 class MusicStore:
     def __init__(self, home: Path):
         self.home = home.expanduser().resolve()
+        self.folder_lock = threading.RLock()
         self.tracks_dir = self.home / "tracks"
         self.tracks_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.home / "library.sqlite3"
@@ -38,10 +40,68 @@ class MusicStore:
                 )
             """)
             db.execute('CREATE TABLE IF NOT EXISTS download_jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS folder_copies (folder TEXT, track_id TEXT, filename TEXT, PRIMARY KEY(folder, track_id))')
         for track in self.list_tracks():
             repeated = f"{track['artist']} - {track['artist']} - ".casefold()
             if FILENAME_RE.fullmatch(track['filename']) or track['filename'].casefold().startswith(repeated):
                 self._name_audio(track)
+
+    def music_folder_status(self):
+        with self._connect() as db:
+            settings = dict(db.execute('SELECT key,value FROM settings').fetchall())
+        return {'folder': settings.get('music_folder', ''), 'error': settings.get('folder_error', '')}
+
+    def set_music_folder(self, folder: str):
+        with self.folder_lock:
+            if folder:
+                path = Path(folder).expanduser()
+                if not path.is_absolute() or not path.is_dir():
+                    raise ValueError('Choose an existing absolute folder path')
+                folder = str(path.resolve())
+            with self._connect() as db:
+                db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('music_folder', folder))
+            self.sync_music_folder()
+        return self.music_folder_status()
+
+    def sync_music_folder(self):
+        with self.folder_lock:
+            folder = self.music_folder_status()['folder']
+            error = ''
+            try:
+                if folder:
+                    destination = Path(folder)
+                    if not destination.is_dir():
+                        raise OSError('Selected folder is unavailable. Reconnect it and retry.')
+                    for track in self.list_tracks():
+                        source = self.path_for(track)
+                        if destination.resolve() == self.tracks_dir.resolve():
+                            continue
+                        with self._connect() as db:
+                            previous = db.execute('SELECT filename FROM folder_copies WHERE folder=? AND track_id=?', (folder, track['id'])).fetchone()
+                        if previous and (destination / previous['filename']).is_file():
+                            continue
+                        target = destination / source.name
+                        suffix = 2
+                        while True:
+                            try:
+                                output = target.open('xb')
+                                break
+                            except FileExistsError:
+                                target = destination / f'{source.stem} ({suffix}){source.suffix}'
+                                suffix += 1
+                        try:
+                            with output, source.open('rb') as audio:
+                                shutil.copyfileobj(audio, output, 1024 * 1024)
+                            with self._connect() as db:
+                                db.execute('INSERT OR REPLACE INTO folder_copies VALUES (?,?,?)', (folder, track['id'], target.name))
+                        except Exception:
+                            target.unlink(missing_ok=True)
+                            raise
+            except (OSError, ValueError) as exc:
+                error = str(exc)
+            with self._connect() as db:
+                db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('folder_error', error))
 
     def save_job(self, job: dict[str, Any]) -> None:
         with self._connect() as db:
@@ -214,6 +274,7 @@ class MusicStore:
                 tuple(track.get(f) for f in fields),
             )
         self._name_audio(track)
+        self.sync_music_folder()
 
     def delete_track(self, track_id: str) -> bool:
         track = self.get_track(track_id)

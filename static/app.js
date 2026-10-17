@@ -9,6 +9,7 @@
     library: [],
     libraryQuery: "",
     librarySort: "newest",
+    musicFolder: '',
     activeJobs: new Map(), // video_id -> job
     jobPollers: new Map(),
     currentlyPlaying: null, // { id, video_id, title, artist, url }
@@ -397,7 +398,7 @@
           await loadLibrary();
 
           // Trigger browser file download directly
-          if (job.track_id && exportFile) {
+          if (job.track_id && exportFile && !state.musicFolder) {
             triggerBrowserDownload(job.track_id);
           }
           render();
@@ -430,6 +431,10 @@
     try {
       const data = await api("/api/tracks");
       state.library = data.tracks || [];
+      if(!isStaticPages) {
+        const folder=await api('/api/music-folder');state.musicFolder=folder.folder;
+        if(folder.error)showToast(`Saved in Sonkip, but folder copy failed: ${folder.error}`,true);
+      }
       $("nav-lib-count").textContent = state.library.length;
     } catch (err) {
       console.error("Failed to load library:", err);
@@ -669,6 +674,22 @@
   $("library-query").addEventListener("input", event => {state.libraryQuery=event.target.value;render();});
   $("library-sort").addEventListener("change", event => {state.librarySort=event.target.value;render();});
   $("restore-backup").addEventListener("click", () => $("backup-file").click());
+  $("music-folder").addEventListener("click", async () => {
+    try {const config=await api('/api/music-folder');$('folder-path').value=config.folder;$('folder-status').textContent=config.error||'Choose a folder on this computer.';$('folder-dialog').showModal();}
+    catch(error){showToast(error.message,true);}
+  });
+  $('folder-browse').addEventListener('click', async () => {
+    $('folder-browse').disabled=true;$('folder-status').textContent='Choose a folder in the system dialog…';
+    try {const selected=await api('/api/music-folder/pick',{method:'POST'});if(selected.folder)$('folder-path').value=selected.folder;$('folder-status').textContent='Press Save folder to copy your music.';}
+    catch(error){$('folder-status').textContent=error.message;}finally{$('folder-browse').disabled=false;}
+  });
+  async function saveMusicFolder(folder) {
+    $('folder-save').disabled=true;$('folder-disable').disabled=true;$('folder-status').textContent='Saving folder and copying music…';
+    try {const result=await api('/api/music-folder',{method:'POST',body:JSON.stringify({folder})});state.musicFolder=result.folder;$('folder-path').value=result.folder;$('folder-status').textContent=result.error|| (result.folder?'Music copied. Future downloads will be copied here automatically.':'Automatic copies stopped. Existing files are kept.');}
+    catch(error){$('folder-status').textContent=error.message;}finally{$('folder-save').disabled=false;$('folder-disable').disabled=false;}
+  }
+  $('folder-save').addEventListener('click',()=>saveMusicFolder($('folder-path').value));
+  $('folder-disable').addEventListener('click',()=>saveMusicFolder(''));
   $("backup-file").addEventListener("change", async event => {
     const file=event.target.files[0];if(!file)return;
     if(!confirm("Restore this Sonkip backup? Missing songs will be added; existing songs are kept.")){event.target.value="";return;}

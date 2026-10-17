@@ -126,6 +126,7 @@ public class MainActivity extends Activity {
                 case "playlists": showPlaylists(null);break;
                 case "library-filter": filterLibrary();break;
                 case "library-backup": backupMenu();break;
+                case "music-folder": musicFolderMenu();break;
                 case "player-options": playerOptions();break;
                 case "retry-failed": downloadAction("/api/jobs/retry-failed");break;
                 case "cancel-download": downloadAction("/api/jobs/"+value+"/cancel");break;
@@ -268,6 +269,20 @@ public class MainActivity extends Activity {
             }).show();
         }).setNegativeButton("Close",null).show();
     }
+    private void musicFolderMenu() {
+        String folder=MusicFolder.prefs(this).getString("tree","");
+        String error=MusicFolder.prefs(this).getString("error","");
+        new AlertDialog.Builder(this).setTitle("Music folder")
+            .setMessage((folder.isEmpty()?"No folder selected.":"Selected: "+Uri.decode(folder))+"\n\nExisting and future songs are copied here for other players. Sonkip keeps its internal copy too. Use a local Music folder; a cloud provider may upload files.\n\n"+error)
+            .setPositiveButton("Choose folder",(d,w)->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),45))
+            .setNeutralButton("Copy / retry",(d,w)->syncMusicFolder())
+            .setNegativeButton("Stop copying",(d,w)->{MusicFolder.prefs(this).edit().remove("tree").remove("error").apply();ui.notice("Automatic copies stopped. Existing files are kept.",false);}).show();
+    }
+    private void syncMusicFolder() {
+        DownloadService.begin(this);ui.notice("Copying music to your folder…",false);
+        requests.execute(()->{try{MusicFolder.sync(this);main.post(()->{String error=MusicFolder.prefs(this).getString("error","");ui.notice(error.isEmpty()?"Music folder synced. Future songs will be copied automatically.":error,!error.isEmpty());});}finally{DownloadService.end();}});
+    }
     private void refresh() {
         if(!ready || isDestroyed() || !refreshing.compareAndSet(false,true))return;
         requests.execute(() -> {
@@ -276,6 +291,8 @@ public class MainActivity extends Activity {
                 JSONArray jobs=request("GET","/api/jobs",null).getJSONArray("jobs");
                 main.post(() -> {
                     tracks=saved;ui.setTracks(saved);ui.setJobs(jobs);
+                    String folderError=MusicFolder.prefs(this).getString("error","");
+                    if(!folderError.isEmpty())ui.notice(folderError,true);
                 });
             } catch(Exception error) {main.post(() -> ui.notice("Could not refresh: "+error.getMessage(),true));}
             finally {refreshing.set(false);}
@@ -369,6 +386,14 @@ public class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int code,int result,Intent data) {
         super.onActivityResult(code,result,data);
+        if(code==45 && result==RESULT_OK && data!=null && data.getData()!=null) {
+            try {Uri tree=data.getData();
+                int required=Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+                if((data.getFlags() & required)!=required)throw new IOException("This folder did not grant read/write access");
+                getContentResolver().takePersistableUriPermission(tree,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                MusicFolder.prefs(this).edit().putString("tree",tree.toString()).remove("error").apply();syncMusicFolder();
+            }catch(Exception error){ui.notice("Cannot keep access to that folder: "+error.getMessage(),true);}return;
+        }
         if((code==43 || code==44) && result==RESULT_OK && data!=null && data.getData()!=null){transferBackup(data.getData(),code==44);return;}
         if(code!=41 || result!=RESULT_OK || data==null || data.getData()==null)return;
         String id=exportId;Uri destination=data.getData();ui.notice("Exporting audio…",false);

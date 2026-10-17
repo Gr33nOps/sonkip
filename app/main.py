@@ -24,6 +24,10 @@ class DownloadRequest(BaseModel):
     video_id: str
 
 
+class MusicFolderRequest(BaseModel):
+    folder: str
+
+
 class PlaylistRequest(BaseModel):
     url: str
 
@@ -42,6 +46,31 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     app.state.store = store
     app.state.manager = manager
+
+    @app.get('/api/music-folder')
+    def music_folder():
+        return store.music_folder_status()
+
+    @app.post('/api/music-folder')
+    def set_music_folder(body: MusicFolderRequest):
+        try:
+            return store.set_music_folder(body.folder.strip())
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post('/api/music-folder/pick')
+    async def pick_music_folder():
+        # Run the native dialog in its own process: Tk requires its main thread.
+        import subprocess
+        import sys
+        script = "import tkinter as t; from tkinter import filedialog; r=t.Tk(); r.withdraw(); r.attributes('-topmost',True); print(filedialog.askdirectory(title='Choose your music folder')); r.destroy()"
+        try:
+            result = await asyncio.to_thread(subprocess.run, [sys.executable, '-c', script], capture_output=True, text=True, timeout=180)
+            if result.returncode:
+                raise ValueError('Folder picker unavailable. Enter a full folder path instead.')
+            return {'folder': result.stdout.strip()}
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/health")
     def health():

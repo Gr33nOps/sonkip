@@ -238,6 +238,7 @@ public class NativeUi extends LinearLayout {
         content.addView(button("My playlists","library-playlists",v->actions.run("playlists","")));
         content.addView(button("Search & sort","library-filter",v->actions.run("library-filter","")));
         content.addView(button("Backup & restore","library-backup",v->actions.run("library-backup","")));
+        content.addView(button("Music folder","music-folder",v->actions.run("music-folder","")));
         if(!libraryQuery.isEmpty())content.addView(text("Matching: "+libraryQuery,12,MUTED,false));
         content.addView(text("Play all follows download order, oldest first.",12,MUTED,false));gap(16);
         if(tracks.length()==0) {

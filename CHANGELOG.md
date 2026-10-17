@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.1
+
+- Add a Music folder setting on Android and desktop so existing and future songs are copied to a user-selected shared folder for playback in other music players.
+- Keep Sonkip's internal library copy for reliable offline playback; changing or disabling the folder never deletes previously copied files.
+- Remember completed copies, avoid overwriting unrelated files, and surface folder-access failures without losing downloads.
+
 ## 2.3.0
 
 - Persist download jobs and recover interrupted work on reopening, retaining partial files where supported.
