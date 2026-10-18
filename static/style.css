@@ -406,6 +406,26 @@ a {
   height: 2px;
   background: var(--acid);
 }
+.audio-format-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 18px auto;
+  font: 500 9px var(--mono);
+  color: rgba(243, 240, 232, 0.58);
+}
+.audio-format-picker select {
+  min-height: 38px;
+  max-width: 100%;
+  padding: 0 34px 0 12px;
+  border: 1px solid rgba(243, 240, 232, 0.45);
+  border-radius: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font: 500 9px var(--mono);
+}
 .search-wrap {
   max-width: 1200px;
 }
@@ -1154,6 +1174,17 @@ a {
 
   .mode-btn {
     flex: 0 0 auto;
+  }
+
+  .audio-format-picker {
+    width: 100%;
+    justify-content: space-between;
+    margin: 0 0 14px;
+  }
+
+  .audio-format-picker select {
+    flex: 1;
+    min-width: 0;
   }
 
   .search-box {

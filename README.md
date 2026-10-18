@@ -8,7 +8,7 @@ Save public YouTube songs and playlists on your own device. Sonkip runs as a nat
 
 **Android 7+ · Windows · macOS · Linux**
 
-Android includes local playlists, shuffle, ordered playback, and background playback/download services. The desktop version runs in your browser on localhost. Downloads preserve the source audio format; they are not converted to MP3.
+Android includes local playlists, shuffle, ordered playback, and background playback/download services. The desktop version runs in your browser on localhost. Choose the output format before saving a song or playlist.
 
 Use **Library → Music folder** to copy existing and future songs into a folder other music players can scan. Sonkip keeps its internal library copy as well. Changing or disabling this setting does not delete copies already placed in earlier folders.
 
@@ -18,7 +18,7 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 
 - Search YouTube by title, artist, or album.
 - Paste a public YouTube playlist, Spotify playlist/album, or SoundCloud set. Spotify and SoundCloud provide track names; Sonkip matches those tracks on YouTube and downloads from there. Unmatched tracks are counted separately. Apple Music and other services are not supported yet.
-- Prefer the best **audio-only** source format, falling back to a combined audio/video file when necessary. No re-encoding to MP3/FLAC.
+- Choose Original, MP3, M4A, Opus, or FLAC for new desktop downloads. Original avoids conversion and remains the fastest, most reliable option.
 - Download progress, speed and estimated time; up to two concurrent downloads.
 - Persistent download history, automatic recovery of interrupted jobs when you reopen Sonkip, bounded retries for temporary network failures, and per-song cancellation.
 - Reuse saved songs instead of downloading duplicates. Search and sort your local library.
@@ -34,7 +34,7 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 
 - Python **3.10+**
 - Deno is installed into the private Python environment by the desktop installer for YouTube JavaScript challenges.
-- Optional: [FFmpeg](https://ffmpeg.org/download.html) on PATH (helpful for certain audio containers; normal single-stream original-audio downloads do not need transcoding)
+- MP3, M4A, Opus, and FLAC conversion uses a private FFmpeg binary installed with the desktop Python dependencies. Original downloads do not transcode.
 
 Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which is installed by the `yt-dlp[default]` dependency in this project. See the [yt-dlp EJS guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
 
@@ -43,6 +43,8 @@ Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which 
 ### Android
 
 Download an APK from Releases, install it, and open Sonkip. Use Find to search or paste a playlist, Downloads to check progress, and Library to play or export songs. Version 2.1 adds background playback and downloads using Android foreground services. Allow notifications to see download progress; playback controls are available in the notification and on the lock screen. Switching apps does not pause music.
+
+On Android, tap **Save as** in Find to choose Original audio, M4A/AAC, or Opus/WebM. The choice applies to individual songs and every track in an imported playlist. Desktop Sonkip additionally supports MP3 and FLAC conversion.
 
 Force-stopping Sonkip, clearing it from Recents on some phones, or restarting the phone stops active work. Interrupted jobs resume when you reopen Sonkip; cancelled jobs stay cancelled. Partial files are retained for resuming where the source supports it. Use **Downloads → Retry failed** for other failures. Android 15 limits background data-sync time to six hours per day. Some manufacturers apply additional battery restrictions; Sonkip does not change those settings automatically.
 
@@ -143,15 +145,15 @@ Default local storage: `~/Music/Sonkip/tracks/` with SQLite at `~/Music/Sonkip/l
 
 All saved state is local to that folder. sonkip has no user accounts, telemetry, hosted database, or cloud library.
 
-Audio files use `Artist - Song title.ext` names. Duplicate names get a number, and older ID-named library files are renamed from their saved metadata when the app starts. The source format is preserved: `.webm` can contain audio only, even if Windows labels it a video file.
+Audio files use `Artist - Song title.ext` names. Duplicate names get a number, and older ID-named library files are renamed from their saved metadata when the app starts. Original downloads preserve the source format; `.webm` can contain audio only, even if Windows labels it a video file.
 
 Routes:
 
 | Method | Endpoint                 | Purpose                                                          |
 | ------ | ------------------------ | ---------------------------------------------------------------- |
 | GET    | `/api/search?q=...`      | Song search                                                      |
-| POST   | `/api/downloads`         | Start job with JSON `{ "video_id": "11-character-ID" }`          |
-| POST   | `/api/playlists`         | Import and queue a playlist with JSON `{ "url": "https://..." }` |
+| POST   | `/api/downloads`         | Start job with JSON `{ "video_id": "…", "audio_format": "mp3" }` |
+| POST   | `/api/playlists`         | Queue a playlist with JSON `{ "url": "…", "audio_format": "m4a" }` |
 | GET    | `/api/jobs`              | Poll progress                                                    |
 | GET    | `/api/tracks`            | List downloaded songs                                            |
 | GET    | `/api/tracks/{id}/audio` | Stream local audio                                               |

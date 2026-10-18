@@ -19,6 +19,11 @@
     pollInterval: null,
     playlist: null,
     authConnected: false,
+    audioFormat: ["original", "mp3", "m4a", "opus", "flac"].includes(
+      localStorage.getItem("sonkip-audio-format"),
+    )
+      ? localStorage.getItem("sonkip-audio-format")
+      : "original",
   };
 
   const $ = (id) => document.getElementById(id);
@@ -298,7 +303,7 @@
     try {
       const data = await api("/api/playlists", {
         method: "POST",
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, audio_format: state.audioFormat }),
       });
       state.playlist = {
         title: data.title,
@@ -369,7 +374,7 @@
     try {
       const res = await api("/api/downloads", {
         method: "POST",
-        body: JSON.stringify({ video_id: videoId }),
+        body: JSON.stringify({ video_id: videoId, audio_format: state.audioFormat }),
       });
       const jobId = res.job_id;
       pollJob(jobId, videoId, title);
@@ -661,6 +666,12 @@
 
   $("mode-song").addEventListener("click", () => setInputMode("song"));
   $("mode-playlist").addEventListener("click", () => setInputMode("playlist"));
+  $("audio-format").value = state.audioFormat;
+  $("audio-format").addEventListener("change", (event) => {
+    state.audioFormat = event.target.value;
+    localStorage.setItem("sonkip-audio-format", state.audioFormat);
+    showToast(`New downloads will be saved as ${event.target.selectedOptions[0].textContent.split(" · ")[0]}.`);
+  });
 
   $("brand-btn").addEventListener("click", () => {
     switchTab("search");

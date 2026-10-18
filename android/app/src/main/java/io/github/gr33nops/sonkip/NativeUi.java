@@ -30,6 +30,7 @@ public class NativeUi extends LinearLayout {
     private String tab = "find", query = "";
     private String libraryQuery="", librarySort="newest";
     private String queueDescription="Saved on this phone";
+    private String audioFormatLabel="Original audio";
     private boolean busy, seeking;
 
     public NativeUi(Context context, Actions actions) {
@@ -161,6 +162,7 @@ public class NativeUi extends LinearLayout {
         playingTime.setText(time(position/1000) + " / " + time(duration/1000) + "   •   "+queueDescription);
     }
     public void queueDescription(String value){queueDescription=value;}
+    public void setAudioFormatLabel(String value){audioFormatLabel=value;if(tab.equals("find"))render();}
     public void hidePlayer() { player.setVisibility(GONE); }
     private static String time(int seconds) { return String.format(Locale.ROOT,"%d:%02d",seconds/60,seconds%60); }
 
@@ -219,6 +221,8 @@ public class NativeUi extends LinearLayout {
         box.addView(search,new LayoutParams(-1,dp(54)));
         input.setOnEditorActionListener((v,id,event) -> { if(id==EditorInfo.IME_ACTION_SEARCH) { search.performClick(); return true; } return false; });
         gap(8);
+        content.addView(button("Save as · "+audioFormatLabel,"audio-format",v->actions.run("audio-format","")));
+        gap(14);
         if(results.length()==0) {
             content.addView(text("Save a song or a whole playlist.",18,INK,true)); gap(8);
             content.addView(text("YouTube, Spotify, or SoundCloud playlists. Spotify and SoundCloud tracks are matched on YouTube; versions may differ. Downloads continue while you use other apps.",14,MUTED,false));

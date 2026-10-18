@@ -75,6 +75,22 @@ class FakeYoutubeDL:
                 "requested_downloads": [{"acodec": "opus", "abr": 140}]}
 
 
+class FakeMp3YoutubeDL(FakeYoutubeDL):
+    def extract_info(self, url, download):
+        assert download is True
+        assert self.opts["postprocessors"] == [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }]
+        filename = self.opts["outtmpl"].replace("%(ext)s", "mp3")
+        from pathlib import Path
+        Path(filename).write_bytes(b"ID3" + b"a" * 100)
+        self.opts["progress_hooks"][0]({"status": "finished"})
+        return {"title": "Sample Audio", "uploader": "Example Artist", "duration": 125,
+                "requested_downloads": [{"acodec": "mp3", "abr": 192}]}
+
+
 def test_end_to_end_local_download(monkeypatch, tmp_path):
     monkeypatch.setattr(engine, "YoutubeDL", FakeYoutubeDL)
     app = create_app(tmp_path)
@@ -123,6 +139,50 @@ def test_end_to_end_local_download(monkeypatch, tmp_path):
         assert client.delete(f"/api/tracks/{job_id}").json() == {"deleted": True}
         assert client.get("/api/tracks").json()["tracks"] == []
         assert client.get(f"/api/tracks/{job_id}/audio").status_code == 404
+
+
+def test_download_converts_to_requested_mp3_format(monkeypatch, tmp_path):
+    monkeypatch.setattr(engine, "YoutubeDL", FakeMp3YoutubeDL)
+    with TestClient(create_app(tmp_path), base_url="http://localhost") as client:
+        response = client.post("/api/downloads", json={"video_id": VIDEO_ID, "audio_format": "mp3"})
+        assert response.status_code == 202
+        job_id = response.json()["job_id"]
+        for _ in range(100):
+            job = client.get(f"/api/jobs/{job_id}").json()
+            if job["status"] in ("complete", "error"):
+                break
+            time.sleep(.01)
+        assert job["status"] == "complete", job
+        assert job["audio_format"] == "mp3"
+        track = client.get("/api/tracks").json()["tracks"][0]
+        assert track["extension"] == "mp3"
+        assert track["filename"] == "Example Artist - Sample Audio.mp3"
+
+
+def test_download_rejects_unknown_audio_format(tmp_path):
+    with TestClient(create_app(tmp_path), base_url="http://localhost") as client:
+        response = client.post("/api/downloads", json={"video_id": VIDEO_ID, "audio_format": "exe"})
+        assert response.status_code == 422
+        assert client.get("/api/jobs").json()["jobs"] == []
+
+
+def test_playlist_applies_selected_format_to_every_job(monkeypatch, tmp_path):
+    import app.main as main
+    monkeypatch.setattr(engine.DownloadManager, "_run", lambda *args: None)
+    monkeypatch.setattr(main, "extract_playlist", lambda *args: {
+        "title": "Road trip",
+        "entries": [
+            {"video_id": VIDEO_ID, "title": "First"},
+            {"video_id": "M7lc1UVf-VE", "title": "Second"},
+        ],
+    })
+    with TestClient(create_app(tmp_path), base_url="http://localhost") as client:
+        response = client.post("/api/playlists", json={
+            "url": "https://music.youtube.com/playlist?list=PLroadtrip",
+            "audio_format": "flac",
+        })
+        assert response.status_code == 202
+        assert {job["audio_format"] for job in client.get("/api/jobs").json()["jobs"]} == {"flac"}
 
 
 def test_no_open_host(tmp_path):

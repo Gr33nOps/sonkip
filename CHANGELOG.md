@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add a remembered output-format choice for new songs and whole playlists.
+- Support Original, MP3, M4A, Opus, and FLAC on desktop; Android offers Original, M4A/AAC, and Opus/WebM without cloud conversion.
+- Preserve the selected format across retries and interrupted-download recovery.
+
 ## 2.3.1
 
 - Add a Music folder setting on Android and desktop so existing and future songs are copied to a user-selected shared folder for playback in other music players.

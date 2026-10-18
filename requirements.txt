@@ -2,3 +2,4 @@ fastapi>=0.115,<1
 uvicorn>=0.30,<1
 yt-dlp[default,deno]>=2026.8.19
 yt-dlp-getpot-wpc==1.1.2; platform_system != "Android"
+imageio-ffmpeg>=0.6,<1; platform_system != "Android"

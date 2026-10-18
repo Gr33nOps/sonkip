@@ -82,4 +82,10 @@ public class NativeUiTest {
         ui.setBusy(false);
         assertTrue(ui.findViewWithTag("search").isEnabled());
     }
+    @Test public void findScreenOpensAudioFormatChoice() {
+        NativeUi ui = screen();
+        assertNotNull(ui.findViewWithTag("audio-format"));
+        ui.findViewWithTag("audio-format").performClick();
+        assertEquals("audio-format", action);
+    }
 }

@@ -1,8 +1,9 @@
-"""yt-dlp search and non-transcoding audio download engine."""
+"""yt-dlp search, audio download, and optional local conversion engine."""
 from __future__ import annotations
 
 import re
 import os
+import shutil
 import threading
 import uuid
 import json
@@ -20,6 +21,8 @@ from .storage import MusicStore
 
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 URL_RE = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
+AUDIO_FORMATS = {"original", "mp3", "m4a", "opus", "flac", "webm"}
+CONVERTED_AUDIO_FORMATS = {"mp3", "m4a", "opus", "flac"}
 
 # Android does not bundle the desktop browser-based token provider.
 COOKIE_FREE_YOUTUBE_ARGS = {
@@ -31,6 +34,44 @@ AUTHENTICATED_YOUTUBE_ARGS = {
 DESKTOP_YOUTUBE_ARGS = {
     "youtube": {"player_client": ["mweb"]},
 }
+
+
+def normalize_audio_format(value: str | None) -> str:
+    audio_format = (value or "original").strip().lower()
+    if audio_format not in AUDIO_FORMATS:
+        raise ValueError("Choose Original, MP3, M4A, Opus, or FLAC")
+    return audio_format
+
+
+def audio_download_options(audio_format: str) -> dict[str, Any]:
+    """Return yt-dlp options which produce the requested audio container."""
+    audio_format = normalize_audio_format(audio_format)
+    if audio_format == "original":
+        return {"format": "bestaudio/best[acodec!=none]"}
+    if audio_format == "webm":
+        return {"format": "bestaudio[ext=webm][acodec^=opus]/bestaudio[ext=webm]"}
+    if os.environ.get("SONKIP_ANDROID_TOKENS") == "1" and audio_format == "m4a":
+        return {"format": "bestaudio[ext=m4a][acodec!=none]/bestaudio[acodec^=mp4a][ext=m4a]"}
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        try:
+            import imageio_ffmpeg
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        except (ImportError, RuntimeError, OSError):
+            pass
+    if not ffmpeg:
+        raise RuntimeError(
+            f"{audio_format.upper()} conversion is unavailable on this device. "
+            "Choose Original, or install FFmpeg and restart Sonkip."
+        )
+    postprocessor = {"key": "FFmpegExtractAudio", "preferredcodec": audio_format}
+    if audio_format != "flac":
+        postprocessor["preferredquality"] = "160" if audio_format == "opus" else "192"
+    return {
+        "format": "bestaudio/best[acodec!=none]",
+        "ffmpeg_location": ffmpeg,
+        "postprocessors": [postprocessor],
+    }
 
 
 def youtube_access_options(cookiefile: Path | None = None) -> dict[str, Any]:
@@ -287,24 +328,28 @@ class DownloadManager:
                 self.jobs[job_id].update(changes)
                 self.store.save_job(self.jobs[job_id])
 
-    def start(self, video_id: str):
+    def start(self, video_id: str, audio_format: str = "original"):
         if not VIDEO_ID_RE.fullmatch(video_id):
             raise ValueError("Invalid video ID")
+        audio_format = normalize_audio_format(audio_format)
         job_id = uuid.uuid4().hex
         with self.lock:
-            saved = next((track for track in self.store.list_tracks() if track['video_id'] == video_id), None)
+            expected_extension = audio_format if audio_format != "original" else None
+            saved = next((track for track in self.store.list_tracks()
+                          if track['video_id'] == video_id
+                          and (expected_extension is None or track['extension'] == expected_extension)), None)
             if saved:
                 job_id = saved['id']
                 self.jobs[job_id] = {
                     'id': job_id, 'video_id': video_id, 'status': 'complete', 'percent': 100,
                     'speed': None, 'eta': None, 'error': None, 'track_id': saved['id'],
                     'created_at': datetime.now(timezone.utc).isoformat(), 'already_saved': True,
-                    'title': saved['title'], 'artist': saved['artist'],
+                    'title': saved['title'], 'artist': saved['artist'], 'audio_format': audio_format,
                 }
                 self.store.save_job(self.jobs[job_id])
                 return job_id
             for existing in self.jobs.values():
-                if existing['video_id'] != video_id:
+                if existing['video_id'] != video_id or existing.get('audio_format', 'original') != audio_format:
                     continue
                 if existing['status'] not in ('error', 'complete'):
                     return existing['id']
@@ -326,10 +371,11 @@ class DownloadManager:
                 "error": None,
                 "track_id": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
+                "audio_format": audio_format,
             }
             self.store.save_job(self.jobs[job_id])
             self.cancellations[job_id] = threading.Event()
-            self.futures[job_id] = self.pool.submit(self._run, job_id, video_id)
+            self.futures[job_id] = self.pool.submit(self._run, job_id, video_id, audio_format)
         return job_id
 
     def cancel(self, job_id: str):
@@ -350,17 +396,17 @@ class DownloadManager:
         for job in self.list_jobs():
             if job['status'] == 'error' and not job.get('cancelled'):
                 try:
-                    retried.append(self.start(job['video_id']))
+                    retried.append(self.start(job['video_id'], job.get('audio_format', 'original')))
                 except ValueError:
                     # A cancelled worker may still be returning from a network call.
                     continue
         return retried
 
     def resume_interrupted(self):
-        return [self.start(job['video_id']) for job in self.list_jobs()
+        return [self.start(job['video_id'], job.get('audio_format', 'original')) for job in self.list_jobs()
                 if job.get('interrupted') and not job.get('cancelled') and job['status'] == 'error']
 
-    def _run(self, job_id: str, video_id: str):
+    def _run(self, job_id: str, video_id: str, audio_format: str = "original"):
         cancelled = self.cancellations[job_id]
         if cancelled.is_set():
             return
@@ -384,10 +430,10 @@ class DownloadManager:
                 # startup for every token context and leaving jobs "starting".
                 from java import jclass
                 jclass("io.github.gr33nops.sonkip.PublicTokenProvider").awaitReady()
+            format_options = audio_download_options(audio_format)
             opts = {
-                # Some public clients expose only combined audio/video. Keep
-                # that original file rather than failing or requiring FFmpeg.
-                "format": "bestaudio/best[acodec!=none]",
+                # Original mode may keep a combined source when no separate
+                # audio stream is available; selected formats are converted.
                 "hls_prefer_native": True,
                 "outtmpl": str(self.store.tracks_dir / f"{job_id}.%(ext)s"),
                 "noplaylist": True,
@@ -400,6 +446,7 @@ class DownloadManager:
                 "restrictfilenames": True,
                 "overwrites": False,
                 **youtube_access_options(self.store.youtube_cookies_path),
+                **format_options,
             }
             try:
                 for attempt in range(3):
@@ -420,7 +467,7 @@ class DownloadManager:
                                      error='Connection interrupted; retrying…', speed=None, eta=None)
                         cancelled.wait(2 ** attempt)
             except Exception as first_error:
-                if cancelled.is_set() or "403" not in str(first_error):
+                if cancelled.is_set() or "403" not in str(first_error) or audio_format != "original":
                     raise
                 # A listed direct stream can expire or reject this client while
                 # the same video's public HLS stream is still available.
@@ -448,7 +495,7 @@ class DownloadManager:
                 raise RuntimeError("Download ended without an audio file")
             path = max(matching, key=lambda p: p.stat().st_size)
             selected = (info.get("requested_downloads") or [{}])[0]
-            codec = selected.get("acodec") or info.get("acodec")
+            codec = audio_format if audio_format in CONVERTED_AUDIO_FORMATS else selected.get("acodec") or info.get("acodec")
             abr = selected.get("abr") or info.get("abr")
             track = {
                 "id": job_id,
