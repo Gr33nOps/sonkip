@@ -454,6 +454,18 @@ class DownloadManager:
             job = self.jobs.get(job_id)
             return dict(job) if job else None
 
+    def delete_tracks(self, track_ids: list[str]) -> list[str]:
+        deleted = []
+        for track_id in dict.fromkeys(track_ids):
+            if not self.store.delete_track(track_id):
+                continue
+            with self.lock:
+                self.jobs.pop(track_id, None)
+                self.cancellations.pop(track_id, None)
+                self.futures.pop(track_id, None)
+            deleted.append(track_id)
+        return deleted
+
     def _update(self, job_id: str, **changes):
         with self.lock:
             if job_id in self.jobs:

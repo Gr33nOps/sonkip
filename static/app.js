@@ -9,6 +9,8 @@
     library: [],
     libraryQuery: "",
     librarySort: "newest",
+    librarySelectionMode: false,
+    selectedTracks: new Set(),
     musicFolder: '',
     activeJobs: new Map(), // video_id -> job
     jobPollers: new Map(),
@@ -23,7 +25,7 @@
       localStorage.getItem("sonkip-audio-format"),
     )
       ? localStorage.getItem("sonkip-audio-format")
-      : "original",
+      : "m4a",
     embedMetadata: localStorage.getItem("sonkip-embed-metadata") !== "false",
   };
 
@@ -106,6 +108,16 @@
     return songs;
   }
 
+  function selectAllVisible() {
+    for (const track of filteredLibrary()) state.selectedTracks.add(track.id);
+    render();
+  }
+
+  function clearLibrarySelection() {
+    state.selectedTracks.clear();
+    render();
+  }
+
   // --- Rendering ---
 
   function render() {
@@ -116,6 +128,13 @@
 
     searchClear.hidden = !$("search-input").value;
     $("library-tools").hidden = state.currentTab !== "library";
+    $("library-select").hidden = state.librarySelectionMode;
+    $("library-select-all").hidden = !state.librarySelectionMode;
+    $("library-delete-selected").hidden = !state.librarySelectionMode;
+    $("library-selection-done").hidden = !state.librarySelectionMode;
+    $("library-selection-count").hidden = !state.librarySelectionMode;
+    $("library-delete-selected").disabled = state.selectedTracks.size === 0;
+    $("library-selection-count").textContent = `${state.selectedTracks.size} selected`;
 
     const isInitial = state.currentTab === "search" && !state.query;
     if (mainContent) {
@@ -219,9 +238,13 @@
       isLocal && track.extension
         ? `<span class="track-tag">${safe(track.extension.toUpperCase())}</span>`
         : "";
+    const selectionHtml = isLocal && state.librarySelectionMode
+      ? `<button class="track-select-btn${state.selectedTracks.has(track.id) ? " selected" : ""}" data-select-track="${safe(track.id)}" aria-pressed="${state.selectedTracks.has(track.id)}" aria-label="Select ${safe(track.title)}">${state.selectedTracks.has(track.id) ? "✓" : "○"}</button>`
+      : "";
 
     return `
       <article class="track-item" data-vid="${safe(track.video_id || "")}" data-tid="${safe(track.id || "")}">
+        ${selectionHtml}
         <button
           class="${playClass}"
           data-play-track="${safe((isLocal ? track.id : track.video_id) || "")}"
@@ -473,6 +496,29 @@
     }
   }
 
+  async function deleteSelectedTracks() {
+    const trackIds = Array.from(state.selectedTracks);
+    if (!trackIds.length || !confirm(`Delete ${trackIds.length} selected song${trackIds.length === 1 ? "" : "s"} from your library?`)) return;
+    try {
+      const result = await api("/api/tracks/delete-selected", {
+        method: "POST",
+        body: JSON.stringify({ track_ids: trackIds }),
+      });
+      if (state.currentlyPlaying && trackIds.includes(state.currentlyPlaying.id)) {
+        pausePlayback();
+        state.currentlyPlaying = null;
+        $("player-bar").hidden = true;
+      }
+      state.selectedTracks.clear();
+      state.librarySelectionMode = false;
+      await loadLibrary();
+      render();
+      showToast(`${result.deleted.length} song${result.deleted.length === 1 ? "" : "s"} deleted`);
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
+
   // --- Audio Playback ---
 
   async function playTrack(trackIdOrVid, isLocal, title, artist) {
@@ -703,6 +749,10 @@
   $("nav-lib-btn").addEventListener("click", () => switchTab("library"));
   $("library-query").addEventListener("input", event => {state.libraryQuery=event.target.value;render();});
   $("library-sort").addEventListener("change", event => {state.librarySort=event.target.value;render();});
+  $("library-select").addEventListener("click", () => {state.librarySelectionMode=true;state.selectedTracks.clear();render();});
+  $("library-select-all").addEventListener("click", selectAllVisible);
+  $("library-delete-selected").addEventListener("click", deleteSelectedTracks);
+  $("library-selection-done").addEventListener("click", () => {state.librarySelectionMode=false;clearLibrarySelection();});
   $("restore-backup").addEventListener("click", () => $("backup-file").click());
   $("music-folder").addEventListener("click", async () => {
     try {const config=await api('/api/music-folder');$('folder-path').value=config.folder;$('folder-status').textContent=config.error||'Choose a folder on this computer.';$('folder-dialog').showModal();}
@@ -734,6 +784,7 @@
 
   async function loadDownloadHistory() {
     const data=await api("/api/jobs");
+    state.activeJobs.clear();
     state.query="Downloads";
     state.results=data.jobs.map(job=>{
       state.activeJobs.set(job.video_id,job);
@@ -753,6 +804,8 @@
   }
 
   document.addEventListener("click", (e) => {
+    const select=e.target.closest("[data-select-track]");
+    if(select){const id=select.dataset.selectTrack;if(state.selectedTracks.has(id))state.selectedTracks.delete(id);else state.selectedTracks.add(id);render();return;}
     const cancel=e.target.closest("[data-cancel-job]");
     if(cancel){api(`/api/jobs/${encodeURIComponent(cancel.dataset.cancelJob)}/cancel`,{method:"POST"}).then(loadDownloadHistory).catch(error=>showToast(error.message,true));return;}
     const playBtn = e.target.closest("[data-play-track]");

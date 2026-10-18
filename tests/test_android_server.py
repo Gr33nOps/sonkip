@@ -186,6 +186,52 @@ def test_android_server_applies_selected_format_to_playlist_downloads(tmp_path: 
         thread.join(timeout=3)
 
 
+def test_android_default_m4a_and_bulk_delete_clear_download_history(tmp_path: Path, monkeypatch):
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("sonkip", encoding="utf-8")
+    server = create_android_server(tmp_path / "music", static_dir, port=0)
+    monkeypatch.setattr(server.manager, "_run", lambda *args: None)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        _, queued = request_json(
+            f"{base_url}/api/downloads", "POST", {"video_id": "dQw4w9WgXcQ"}
+        )
+        track_id = queued["job_id"]
+        server.manager.futures[track_id].result(timeout=3)
+        assert server.manager.get_job(track_id)["audio_format"] == "m4a"
+        source = server.store.tracks_dir / f"{track_id}.m4a"
+        source.write_bytes(b"audio")
+        server.store.add_track({
+            "id": track_id,
+            "video_id": "dQw4w9WgXcQ",
+            "title": "Song",
+            "artist": "Artist",
+            "duration": 10,
+            "filename": source.name,
+            "bytes": source.stat().st_size,
+            "extension": "m4a",
+            "codec": "aac",
+            "abr": 128,
+        })
+        server.manager._update(track_id, status="complete", track_id=track_id)
+
+        status, result = request_json(
+            f"{base_url}/api/tracks/delete-selected", "POST", {"track_ids": [track_id]}
+        )
+        assert status == 200
+        assert result == {"deleted": [track_id]}
+        assert request_json(f"{base_url}/api/tracks")[1]["tracks"] == []
+        assert request_json(f"{base_url}/api/jobs")[1]["jobs"] == []
+    finally:
+        server.manager.pool.shutdown(wait=True)
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
 def test_android_server_accepts_android_string_paths(tmp_path: Path):
     static_dir = tmp_path / "static"
     static_dir.mkdir()

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.1
+
+- Add library selection mode on Android and desktop with individual selection, Select all, and Delete selected.
+- Remove a deleted track's completed job so it no longer remains in Downloads after leaving the library.
+- Make compatible M4A/AAC the default for fresh Android, macOS, Windows, and Linux installs while preserving an existing saved format choice.
+
 ## 2.5.0
 
 - Add an optional **Music details & artwork** setting for new downloads. It is enabled by default and remembered separately on Android and desktop.

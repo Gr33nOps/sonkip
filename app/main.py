@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import tempfile
 import zipfile
 from pathlib import Path
@@ -22,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 class DownloadRequest(BaseModel):
     video_id: str
-    audio_format: str = "original"
+    audio_format: str = "m4a"
     embed_metadata: bool = True
 
 
@@ -32,8 +33,12 @@ class MusicFolderRequest(BaseModel):
 
 class PlaylistRequest(BaseModel):
     url: str
-    audio_format: str = "original"
+    audio_format: str = "m4a"
     embed_metadata: bool = True
+
+
+class DeleteTracksRequest(BaseModel):
+    track_ids: list[str]
 
 
 class YoutubeAuthRequest(BaseModel):
@@ -248,9 +253,15 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @app.delete("/api/tracks/{track_id}")
     def delete_track(track_id: str):
-        if not store.delete_track(track_id):
+        if not manager.delete_tracks([track_id]):
             raise HTTPException(status_code=404, detail="Track not found")
         return {"deleted": True}
+
+    @app.post("/api/tracks/delete-selected")
+    def delete_selected(body: DeleteTracksRequest):
+        if len(body.track_ids) > 10000 or any(not re.fullmatch(r"[0-9a-f]{32}", value) for value in body.track_ids):
+            raise HTTPException(status_code=422, detail="Invalid track selection")
+        return {"deleted": manager.delete_tracks(body.track_ids)}
 
     app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 

@@ -105,7 +105,7 @@ def test_end_to_end_local_download(monkeypatch, tmp_path):
         assert results[0]["title"] == "Sample <Audio>"
         assert client.post("/api/downloads", json={"video_id": "not-valid"}).status_code == 422
 
-        resp = client.post("/api/downloads", json={"video_id": VIDEO_ID})
+        resp = client.post("/api/downloads", json={"video_id": VIDEO_ID, "audio_format": "original"})
         assert resp.status_code == 202
         job_id = resp.json()["job_id"]
         for _ in range(100):
@@ -138,7 +138,53 @@ def test_end_to_end_local_download(monkeypatch, tmp_path):
         assert len(client.get("/api/tracks").json()["tracks"]) == 1
         assert client.delete(f"/api/tracks/{job_id}").json() == {"deleted": True}
         assert client.get("/api/tracks").json()["tracks"] == []
+        assert client.get("/api/jobs").json()["jobs"] == []
         assert client.get(f"/api/tracks/{job_id}/audio").status_code == 404
+
+
+def test_delete_selected_removes_tracks_and_their_download_history(monkeypatch, tmp_path):
+    app = create_app(tmp_path)
+    manager = app.state.manager
+    monkeypatch.setattr(manager, "_run", lambda *args: None)
+    track_ids = []
+    for video_id, title in ((VIDEO_ID, "First"), ("M7lc1UVf-VE", "Second")):
+        track_id = manager.start(video_id, "m4a")
+        manager.futures[track_id].result(timeout=3)
+        source = manager.store.tracks_dir / f"{track_id}.m4a"
+        source.write_bytes(b"audio")
+        manager.store.add_track({
+            "id": track_id,
+            "video_id": video_id,
+            "title": title,
+            "artist": "Artist",
+            "duration": 10,
+            "filename": source.name,
+            "bytes": source.stat().st_size,
+            "extension": "m4a",
+            "codec": "aac",
+            "abr": 128,
+        })
+        manager._update(track_id, status="complete", track_id=track_id)
+        track_ids.append(track_id)
+
+    with TestClient(app, base_url="http://localhost") as client:
+        response = client.post("/api/tracks/delete-selected", json={"track_ids": track_ids})
+        assert response.status_code == 200
+        assert response.json() == {"deleted": track_ids}
+        assert client.get("/api/tracks").json()["tracks"] == []
+        assert client.get("/api/jobs").json()["jobs"] == []
+    manager.pool.shutdown(wait=True)
+
+
+def test_unspecified_download_format_defaults_to_compatible_m4a(monkeypatch, tmp_path):
+    app = create_app(tmp_path)
+    manager = app.state.manager
+    monkeypatch.setattr(manager, "_run", lambda *args: None)
+    with TestClient(app, base_url="http://localhost") as client:
+        job_id = client.post("/api/downloads", json={"video_id": VIDEO_ID}).json()["job_id"]
+        manager.futures[job_id].result(timeout=3)
+        assert client.get(f"/api/jobs/{job_id}").json()["audio_format"] == "m4a"
+    manager.pool.shutdown(wait=True)
 
 
 def test_download_converts_to_requested_mp3_format(monkeypatch, tmp_path):
@@ -294,7 +340,7 @@ def test_download_uses_connected_youtube_session(monkeypatch, tmp_path):
     )
     with TestClient(app, base_url="http://localhost") as client:
         assert client.post("/api/auth/youtube", json={"cookies": cookies}).status_code == 200
-        job_id = client.post("/api/downloads", json={"video_id": VIDEO_ID}).json()["job_id"]
+        job_id = client.post("/api/downloads", json={"video_id": VIDEO_ID, "audio_format": "original"}).json()["job_id"]
         for _ in range(100):
             job = client.get(f"/api/jobs/{job_id}").json()
             if job["status"] in ("complete", "error"):

@@ -104,9 +104,9 @@
         <div class="audio-format-picker">
           <label for="audio-format">SAVE AS</label>
           <select id="audio-format" aria-label="Audio format">
+            <option value="m4a" selected>M4A / AAC · compatible</option>
             <option value="original">Original · fastest</option>
             <option value="mp3">MP3 · most compatible</option>
-            <option value="m4a">M4A · balanced</option>
             <option value="opus">Opus · smallest</option>
             <option value="flac">FLAC · large, no quality gain</option>
           </select>
@@ -164,6 +164,11 @@
         <div id="library-tools" class="library-tools" hidden>
           <input id="library-query" type="search" placeholder="Search saved songs or artists" aria-label="Search your library" />
           <select id="library-sort" aria-label="Sort library"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Song title</option><option value="artist">Artist</option></select>
+          <button id="library-select" type="button">Select</button>
+          <button id="library-select-all" type="button" hidden>Select all</button>
+          <button id="library-delete-selected" type="button" hidden disabled>Delete selected</button>
+          <button id="library-selection-done" type="button" hidden>Done</button>
+          <span id="library-selection-count" class="selection-count" hidden>0 selected</span>
           <a href="/api/backup" class="text-link">Export backup ↓</a>
           <button id="restore-backup" type="button">Restore backup</button>
           <button id="music-folder" type="button">Music folder</button>

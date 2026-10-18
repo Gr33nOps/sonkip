@@ -4,7 +4,7 @@
 
 Save public YouTube songs and playlists on your own device. Sonkip runs as a native Android app or a local website on Windows, macOS, and Linux. Your library stays on your device; Sonkip has no accounts or analytics.
 
-[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.5.0/Sonkip-2.5.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.5.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.5.1/Sonkip-2.5.1.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.5.1) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
 **Android 7+ · Windows · macOS · Linux**
 
@@ -18,11 +18,11 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 
 - Search YouTube by title, artist, or album.
 - Paste a public YouTube playlist, Spotify playlist/album, or SoundCloud set. Spotify and SoundCloud provide track names; Sonkip matches those tracks on YouTube and downloads from there. Unmatched tracks are counted separately. Apple Music and other services are not supported yet.
-- Choose Original, MP3, M4A, Opus, or FLAC for new desktop downloads. Original avoids conversion and remains the fastest, most reliable option.
+- Choose Original, MP3, M4A, Opus, or FLAC for new desktop downloads. Compatible M4A/AAC is the default for fresh installs; an existing saved choice is preserved.
 - Keep **Music details & artwork** enabled to embed standard title, artist, album, track, year, genre, and cover tags when available. Disable it before a download to leave the file untagged. M4A/AAC is the recommended Android choice for broad player compatibility and embedded artwork.
 - Download progress, speed and estimated time; up to two concurrent downloads.
 - Persistent download history, automatic recovery of interrupted jobs when you reopen Sonkip, bounded retries for temporary network failures, and per-song cancellation.
-- Reuse saved songs instead of downloading duplicates. Search and sort your local library.
+- Reuse saved songs instead of downloading duplicates. Search, sort, select individually or select all, and delete selected songs from your local library. Deleted songs are also removed from download history.
 - Export and restore a ZIP backup of your music. Android backups also include your custom playlists; authentication files are excluded.
 - SQLite library persisted between restarts; offline playback, file export and deletion.
 - Responsive animated UI with no frontend build tools, tracking cookies, analytics, or CDN JavaScript.
@@ -45,7 +45,7 @@ Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which 
 
 Download an APK from Releases, install it, and open Sonkip. Use Find to search or paste a playlist, Downloads to check progress, and Library to play or export songs. Version 2.1 adds background playback and downloads using Android foreground services. Allow notifications to see download progress; playback controls are available in the notification and on the lock screen. Switching apps does not pause music.
 
-On Android, tap **Save as** in Find to choose Original audio, M4A/AAC, or Opus/WebM. The choice applies to individual songs and every track in an imported playlist. Desktop Sonkip additionally supports MP3 and FLAC conversion.
+On Android, tap **Save as** in Find to choose Original audio, M4A/AAC, or Opus/WebM. Compatible M4A/AAC is selected by default on a fresh install. The choice applies to individual songs and every track in an imported playlist. Desktop Sonkip additionally supports MP3 and FLAC conversion.
 
 The **Music details & artwork** option is enabled by default for new downloads. Tagged M4A files can show their song title, artist, album and cover in players such as Gramophone after Sonkip copies them to your selected Music folder. Available details depend on the public metadata supplied by the matched YouTube source; Sonkip uses the video thumbnail when cover art is available.
 
@@ -57,7 +57,7 @@ In Library, **Play all** plays songs in download order (oldest first); **Shuffle
 
 Use **My playlists → Create playlist** to choose saved songs. You can also use a song's **More → Add to playlist** menu. Each playlist supports Play, Shuffle, song selection, rename, and delete. Deleting a playlist leaves its audio files in Library. Playlists are saved locally and survive updates; the active playback queue is temporary.
 
-Open **Queue · Repeat · Sleep timer** under the player to move an upcoming song to the front, remove it from the queue, repeat one/all songs, or pause after 15, 30, or 60 minutes. Removing a song from the queue does not delete its file. **Library → Search & sort** filters by song or artist and sorts by title, artist, or download order.
+Open **Queue · Repeat · Sleep timer** under the player to move an upcoming song to the front, remove it from the queue, repeat one/all songs, or pause after 15, 30, or 60 minutes. Removing a song from the queue does not delete its file. **Library → Search & sort** filters by song or artist and sorts by title, artist, or download order. Use **Library → Select songs** to choose tracks individually, select all visible tracks, and delete the selection together.
 
 ### Back up your music
 

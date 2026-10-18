@@ -39,6 +39,30 @@ test('library filtering searches artists and sorts without mutating the library'
   assert.equal(context.state.library[0].id,'b');
 });
 
+test('select all chooses every visible library song and can clear the selection', () => {
+  const start=source.indexOf('  function filteredLibrary(');
+  const end=source.indexOf('  // --- Rendering ---');
+  const context={state:{library:[{id:'a',title:'Alpha',artist:'Band'},{id:'b',title:'Beta',artist:'Band'},{id:'c',title:'Else',artist:'Other'}],libraryQuery:'band',librarySort:'newest',selectedTracks:new Set()},render:()=>{}};
+  vm.runInNewContext(start<0?'':source.slice(start,end),context);
+  assert.equal(typeof context.selectAllVisible,'function');
+  context.selectAllVisible();
+  assert.deepEqual(Array.from(context.state.selectedTracks),['a','b']);
+  context.clearLibrarySelection();
+  assert.deepEqual(Array.from(context.state.selectedTracks),[]);
+});
+
+test('a fresh browser defaults to compatible M4A but preserves an existing choice', () => {
+  const start=source.indexOf('  const state = {');
+  const end=source.indexOf('  const $');
+  const readDefault=(saved)=>{
+    const context={localStorage:{getItem:key=>key==='sonkip-audio-format'?saved:null}};
+    vm.runInNewContext(source.slice(start,end)+'\nresult=state.audioFormat;',context);
+    return context.result;
+  };
+  assert.equal(readDefault(null),'m4a');
+  assert.equal(readDefault('mp3'),'mp3');
+});
+
 test('opening download history twice never creates duplicate pollers', () => {
   let timers=0;
   const code=source.slice(source.indexOf('  function pollJob('),source.indexOf('  function triggerBrowserDownload('));

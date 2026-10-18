@@ -1140,6 +1140,10 @@ a {
 :root .library-tools[hidden] { display:none; }
 .library-tools input[type="search"] { flex:1; min-width:180px; }
 .library-tools input, .library-tools select, .library-tools button { font:inherit; padding:10px 14px; color:inherit; background:transparent; border:1px solid currentColor; border-radius:2px; }
+.library-tools button:disabled { opacity:.42; cursor:not-allowed; }
+.selection-count { font: 700 12px/1.2 monospace; text-transform:uppercase; }
+.track-select-btn { width:42px; height:42px; flex:0 0 42px; border:1px solid var(--ink); border-radius:50%; background:transparent; color:var(--ink); font:700 19px/1 monospace; cursor:pointer; }
+.track-select-btn.selected { background:var(--acid); box-shadow:3px 3px 0 var(--orange); }
  #folder-dialog { max-width: 560px; width: calc(100% - 32px); max-height: calc(100% - 32px); overflow: auto; margin: auto; padding: 24px; border: 1px solid #171717; background: #f4f1e9; color: #171717; }
  #folder-dialog::backdrop { background: #0009; }
  #folder-dialog input { display: block; width: 100%; margin: 12px 0; padding: 12px; }

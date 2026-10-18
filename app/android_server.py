@@ -229,7 +229,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
             try:
                 job_id = self.server.manager.start(
                     str(body.get("video_id", "")),
-                    str(body.get("audio_format", "original")),
+                    str(body.get("audio_format", "m4a")),
                     body.get("embed_metadata", True) is not False,
                 )
             except ValueError as exc:
@@ -249,7 +249,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/playlists":
             try:
-                audio_format = str(body.get("audio_format", "original"))
+                audio_format = str(body.get("audio_format", "m4a"))
                 embed_metadata = body.get("embed_metadata", True) is not False
                 playlist = extract_playlist(
                     str(body.get("url", "")),
@@ -280,6 +280,14 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                      "source_count": playlist.get("source_count", len(jobs))},
                 )
             return
+        if path == "/api/tracks/delete-selected":
+            track_ids = body.get("track_ids")
+            if (not isinstance(track_ids, list) or len(track_ids) > 10000
+                    or any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{32}", value) for value in track_ids)):
+                self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": "Invalid track selection"})
+            else:
+                self._json(HTTPStatus.OK, {"deleted": self.server.manager.delete_tracks(track_ids)})
+            return
         self._json(HTTPStatus.NOT_FOUND, {"detail": "Not found"})
 
     def do_DELETE(self) -> None:
@@ -292,7 +300,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
         if not match:
             self._json(HTTPStatus.NOT_FOUND, {"detail": "Not found"})
             return
-        if self.server.store.delete_track(match.group(1)):
+        if self.server.manager.delete_tracks([match.group(1)]):
             self._json(HTTPStatus.OK, {"deleted": True})
         else:
             self._json(HTTPStatus.NOT_FOUND, {"detail": "Track not found"})

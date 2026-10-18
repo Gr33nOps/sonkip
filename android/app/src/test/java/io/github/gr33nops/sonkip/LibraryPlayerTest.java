@@ -110,6 +110,25 @@ public class LibraryPlayerTest {
         assertNotNull("Player needs a queue/repeat/timer menu",ui.findViewWithTag("player-options"));
         ui.findViewWithTag("player-options").performClick();assertEquals("player-options",action[0]);
     }
+    @Test public void librarySelectionSupportsIndividualSelectAllAndDeleteSelected()throws Exception {
+        String[] action={null,null};NativeUi ui=new NativeUi(RuntimeEnvironment.getApplication(),(a,v)->{action[0]=a;action[1]=v;});
+        ui.setTracks(songs());ui.showTab("library");
+        assertNotNull(ui.findViewWithTag("library-select"));
+        ui.findViewWithTag("library-select").performClick();
+        assertNotNull(ui.findViewWithTag("select-a"));
+        ui.findViewWithTag("select-a").performClick();
+        assertTrue(ui.findViewWithTag("delete-selected").isEnabled());
+        ui.findViewWithTag("select-all").performClick();
+        ui.findViewWithTag("delete-selected").performClick();
+        assertEquals("delete-selected",action[0]);
+        JSONArray ids=new JSONArray(action[1]);
+        assertEquals(3,ids.length());
+        assertEquals(new HashSet<>(Arrays.asList("a","b","c")),new HashSet<>(Arrays.asList(ids.getString(0),ids.getString(1),ids.getString(2))));
+    }
+    @Test public void freshAndroidUiShowsCompatibleM4aAsTheDefault() {
+        NativeUi ui=new NativeUi(RuntimeEnvironment.getApplication(),(a,v)->{});
+        assertTrue(((android.widget.Button)ui.findViewWithTag("audio-format")).getText().toString().contains("M4A / AAC"));
+    }
     @Test public void customPlaylistKeepsItsOwnOrderInsteadOfSortingByDownloadDate()throws Exception {
         PlaybackQueue q=new PlaybackQueue(songs(),false,false,new Random(7));
         assertEquals("c",q.current().getString("id"));assertEquals("b",q.next().getString("id"));

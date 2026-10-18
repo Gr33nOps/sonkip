@@ -39,14 +39,14 @@ public class MainActivity extends Activity {
     private String exportId;
     private PlaylistStore playlists;
     private boolean backupBusy;
-    private String audioFormat="original";
+    private String audioFormat="m4a";
     private boolean embedMetadata=true;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         playlists=new PlaylistStore(this);
         ui = new NativeUi(this, this::action);
-        audioFormat=getSharedPreferences("sonkip",MODE_PRIVATE).getString("audio_format","original");
+        audioFormat=getSharedPreferences("sonkip",MODE_PRIVATE).getString("audio_format","m4a");
         embedMetadata=getSharedPreferences("sonkip",MODE_PRIVATE).getBoolean("embed_metadata",true);
         ui.setAudioFormatLabel(audioFormatLabel(audioFormat));
         ui.setMetadataEnabled(embedMetadata);
@@ -131,6 +131,7 @@ public class MainActivity extends Activity {
                 case "shuffle-all": PlaybackService.playQueue(this,tracks,true,true);break;
                 case "playlists": showPlaylists(null);break;
                 case "library-filter": filterLibrary();break;
+                case "delete-selected": confirmDeleteSelected(value);break;
                 case "library-backup": backupMenu();break;
                 case "music-folder": musicFolderMenu();break;
                 case "audio-format": audioFormatMenu();break;
@@ -420,6 +421,23 @@ public class MainActivity extends Activity {
                     }
                     refresh();ui.notice("Song removed from Sonkip",false);
                 });}catch(Exception error){main.post(() -> ui.notice(error.getMessage(),true));}
+            })).show();
+    }
+    private void confirmDeleteSelected(String value) throws Exception {
+        JSONArray ids=new JSONArray(value);
+        if(ids.length()==0)return;
+        new AlertDialog.Builder(this).setTitle("Delete selected songs?")
+            .setMessage(ids.length()+" song"+(ids.length()==1?"":"s")+" will be removed from Sonkip. Files exported to another folder are kept.")
+            .setNegativeButton("Keep",null).setPositiveButton("Delete",(dialog,which)->requests.execute(()->{
+                try {
+                    request("POST","/api/tracks/delete-selected",new JSONObject().put("track_ids",ids));
+                    main.post(()->{
+                        if(PlaybackService.current!=null)for(int i=0;i<ids.length();i++)if(ids.optString(i).equals(PlaybackService.current.trackId)){
+                            stopService(new Intent(this,PlaybackService.class));ui.hidePlayer();break;
+                        }
+                        ui.finishSelection();refresh();ui.notice(ids.length()+" song"+(ids.length()==1?"":"s")+" removed from Sonkip",false);
+                    });
+                }catch(Exception error){main.post(()->ui.notice(error.getMessage(),true));}
             })).show();
     }
     @Override protected void onActivityResult(int code,int result,Intent data) {

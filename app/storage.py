@@ -284,4 +284,6 @@ class MusicStore:
         path.unlink(missing_ok=True)
         with self._connect() as db:
             db.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
+            db.execute("DELETE FROM download_jobs WHERE id = ?", (track_id,))
+            db.execute("DELETE FROM folder_copies WHERE track_id = ?", (track_id,))
         return True

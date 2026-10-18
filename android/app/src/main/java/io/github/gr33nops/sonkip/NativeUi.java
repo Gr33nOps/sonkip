@@ -12,8 +12,10 @@ import android.widget.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /** Native Android widgets only. The internal token browser is never the app UI. */
 public class NativeUi extends LinearLayout {
@@ -29,8 +31,10 @@ public class NativeUi extends LinearLayout {
     private final Map<String,String> titles = new HashMap<>();
     private String tab = "find", query = "";
     private String libraryQuery="", librarySort="newest";
+    private final Set<String> selectedTracks = new LinkedHashSet<>();
+    private boolean selectingTracks;
     private String queueDescription="Saved on this phone";
-    private String audioFormatLabel="Original audio";
+    private String audioFormatLabel="M4A / AAC";
     private boolean metadataEnabled=true;
     private boolean busy, seeking;
 
@@ -150,6 +154,9 @@ public class NativeUi extends LinearLayout {
     }
     public void setTracks(JSONArray value) {
         boolean changed = !tracks.toString().equals(value.toString()); tracks = value; remember(value);
+        Set<String> available=new java.util.HashSet<>();
+        for(int i=0;i<tracks.length();i++)available.add(tracks.optJSONObject(i).optString("id"));
+        selectedTracks.retainAll(available);
         if(changed && tab.equals("library")) render();
     }
     public void setJobs(JSONArray value) {
@@ -242,6 +249,15 @@ public class NativeUi extends LinearLayout {
         all.setEnabled(tracks.length()>0);shuffle.setEnabled(tracks.length()>0);
         controls.addView(all,new LayoutParams(0,dp(48),1));controls.addView(shuffle,new LayoutParams(0,dp(48),1));
         content.addView(controls);gap(8);
+        if(!selectingTracks)content.addView(button("Select songs","library-select",v->{selectingTracks=true;selectedTracks.clear();render();}));
+        else {
+            LinearLayout selection=row();
+            Button selectAll=button("Select all","select-all",v->{for(JSONObject song:visibleLibrary())selectedTracks.add(song.optString("id"));render();});
+            Button delete=button("Delete selected","delete-selected",v->actions.run("delete-selected",selectedTrackJson()));
+            delete.setEnabled(!selectedTracks.isEmpty());
+            selection.addView(selectAll,new LayoutParams(0,dp(48),1));selection.addView(delete,new LayoutParams(0,dp(48),1));content.addView(selection);
+            content.addView(button("Done · "+selectedTracks.size()+" selected","selection-done",v->{selectingTracks=false;selectedTracks.clear();render();}));
+        }
         content.addView(button("My playlists","library-playlists",v->actions.run("playlists","")));
         content.addView(button("Search & sort","library-filter",v->actions.run("library-filter","")));
         content.addView(button("Backup & restore","library-backup",v->actions.run("library-backup","")));
@@ -253,6 +269,13 @@ public class NativeUi extends LinearLayout {
             empty.setTag("empty-library"); content.addView(empty);
             content.addView(button("Find music","empty-find",v -> showTab("find")));
         }
+        java.util.List<JSONObject> visible=visibleLibrary();
+        for(JSONObject track:visible)trackCard(track,true);
+        if(!libraryQuery.isEmpty() && visible.isEmpty())content.addView(text("No saved songs match this search.",14,MUTED,false));
+    }
+    void filterLibrary(String query,String sort){libraryQuery=query.trim();librarySort=sort;render();}
+    void finishSelection(){selectingTracks=false;selectedTracks.clear();if(tab.equals("library"))render();}
+    private java.util.List<JSONObject> visibleLibrary() {
         java.util.List<JSONObject> visible=new java.util.ArrayList<>();
         for(int i=0;i<tracks.length();i++) {
             JSONObject track=tracks.optJSONObject(i);
@@ -260,15 +283,25 @@ public class NativeUi extends LinearLayout {
         }
         if(librarySort.equals("oldest"))java.util.Collections.reverse(visible);
         else if(librarySort.equals("title") || librarySort.equals("artist"))visible.sort(java.util.Comparator.comparing(t->t.optString(librarySort).toLowerCase(Locale.ROOT)));
-        for(JSONObject track:visible)trackCard(track,true);
-        if(!libraryQuery.isEmpty() && visible.isEmpty())content.addView(text("No saved songs match this search.",14,MUTED,false));
+        return visible;
     }
-    void filterLibrary(String query,String sort){libraryQuery=query.trim();librarySort=sort;render();}
+    private String selectedTrackJson() {
+        JSONArray ids=new JSONArray();for(String id:selectedTracks)ids.put(id);return ids.toString();
+    }
+    private void updateDeleteSelected() {
+        Button delete=findViewWithTag("delete-selected");if(delete!=null)delete.setEnabled(!selectedTracks.isEmpty());
+        Button done=findViewWithTag("selection-done");if(done!=null)done.setText("Done · "+selectedTracks.size()+" selected");
+    }
     private void trackCard(JSONObject item, boolean saved) {
         if(item==null) return;
         String id = item.optString(saved ? "id" : "video_id");
         LinearLayout box = card(); box.addView(text(item.optString("title","Untitled"),17,INK,true));
         box.addView(text(item.optString("artist","Unknown artist")+"  ·  "+time(item.optInt("duration")),12,MUTED,false));
+        if(saved && selectingTracks) {
+            CheckBox selected=new CheckBox(getContext());selected.setTag("select-"+id);selected.setText("Select this song");selected.setChecked(selectedTracks.contains(id));
+            selected.setOnCheckedChangeListener((button,checked)->{if(checked)selectedTracks.add(id);else selectedTracks.remove(id);updateDeleteSelected();});
+            box.addView(selected,new LayoutParams(-1,dp(48)));return;
+        }
         LinearLayout buttons = row();
         String existingId="";
         if(!saved)for(int i=0;i<tracks.length();i++){JSONObject local=tracks.optJSONObject(i);if(local!=null && id.equals(local.optString("video_id"))){existingId=local.optString("id");break;}}
