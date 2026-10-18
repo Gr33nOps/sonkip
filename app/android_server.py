@@ -230,6 +230,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                 job_id = self.server.manager.start(
                     str(body.get("video_id", "")),
                     str(body.get("audio_format", "original")),
+                    body.get("embed_metadata", True) is not False,
                 )
             except ValueError as exc:
                 self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": str(exc)})
@@ -249,6 +250,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/playlists":
             try:
                 audio_format = str(body.get("audio_format", "original"))
+                embed_metadata = body.get("embed_metadata", True) is not False
                 playlist = extract_playlist(
                     str(body.get("url", "")),
                     self.server.store.youtube_cookies_path,
@@ -257,7 +259,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                     {
                         **entry,
                         "job_id": self.server.manager.start(
-                            entry["video_id"], audio_format
+                            entry["video_id"], audio_format, embed_metadata
                         ),
                     }
                     for entry in playlist["entries"]

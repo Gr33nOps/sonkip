@@ -4,7 +4,7 @@
 
 Save public YouTube songs and playlists on your own device. Sonkip runs as a native Android app or a local website on Windows, macOS, and Linux. Your library stays on your device; Sonkip has no accounts or analytics.
 
-[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.4.1/Sonkip-2.4.1.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.4.1) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.5.0/Sonkip-2.5.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.5.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
 **Android 7+ · Windows · macOS · Linux**
 
@@ -19,6 +19,7 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 - Search YouTube by title, artist, or album.
 - Paste a public YouTube playlist, Spotify playlist/album, or SoundCloud set. Spotify and SoundCloud provide track names; Sonkip matches those tracks on YouTube and downloads from there. Unmatched tracks are counted separately. Apple Music and other services are not supported yet.
 - Choose Original, MP3, M4A, Opus, or FLAC for new desktop downloads. Original avoids conversion and remains the fastest, most reliable option.
+- Keep **Music details & artwork** enabled to embed standard title, artist, album, track, year, genre, and cover tags when available. Disable it before a download to leave the file untagged. M4A/AAC is the recommended Android choice for broad player compatibility and embedded artwork.
 - Download progress, speed and estimated time; up to two concurrent downloads.
 - Persistent download history, automatic recovery of interrupted jobs when you reopen Sonkip, bounded retries for temporary network failures, and per-song cancellation.
 - Reuse saved songs instead of downloading duplicates. Search and sort your local library.
@@ -45,6 +46,8 @@ Latest yt-dlp YouTube support also needs the `yt-dlp-ejs` Python package, which 
 Download an APK from Releases, install it, and open Sonkip. Use Find to search or paste a playlist, Downloads to check progress, and Library to play or export songs. Version 2.1 adds background playback and downloads using Android foreground services. Allow notifications to see download progress; playback controls are available in the notification and on the lock screen. Switching apps does not pause music.
 
 On Android, tap **Save as** in Find to choose Original audio, M4A/AAC, or Opus/WebM. The choice applies to individual songs and every track in an imported playlist. Desktop Sonkip additionally supports MP3 and FLAC conversion.
+
+The **Music details & artwork** option is enabled by default for new downloads. Tagged M4A files can show their song title, artist, album and cover in players such as Gramophone after Sonkip copies them to your selected Music folder. Available details depend on the public metadata supplied by the matched YouTube source; Sonkip uses the video thumbnail when cover art is available.
 
 Force-stopping Sonkip, clearing it from Recents on some phones, or restarting the phone stops active work. Interrupted jobs resume when you reopen Sonkip; cancelled jobs stay cancelled. Partial files are retained for resuming where the source supports it. Use **Downloads → Retry failed** for other failures. Android 15 limits background data-sync time to six hours per day. Some manufacturers apply additional battery restrictions; Sonkip does not change those settings automatically.
 

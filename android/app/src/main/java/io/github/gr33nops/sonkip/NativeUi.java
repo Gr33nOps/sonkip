@@ -31,6 +31,7 @@ public class NativeUi extends LinearLayout {
     private String libraryQuery="", librarySort="newest";
     private String queueDescription="Saved on this phone";
     private String audioFormatLabel="Original audio";
+    private boolean metadataEnabled=true;
     private boolean busy, seeking;
 
     public NativeUi(Context context, Actions actions) {
@@ -163,6 +164,7 @@ public class NativeUi extends LinearLayout {
     }
     public void queueDescription(String value){queueDescription=value;}
     public void setAudioFormatLabel(String value){audioFormatLabel=value;if(tab.equals("find"))render();}
+    public void setMetadataEnabled(boolean value){metadataEnabled=value;if(tab.equals("find"))render();}
     public void hidePlayer() { player.setVisibility(GONE); }
     private static String time(int seconds) { return String.format(Locale.ROOT,"%d:%02d",seconds/60,seconds%60); }
 
@@ -222,6 +224,7 @@ public class NativeUi extends LinearLayout {
         input.setOnEditorActionListener((v,id,event) -> { if(id==EditorInfo.IME_ACTION_SEARCH) { search.performClick(); return true; } return false; });
         gap(8);
         content.addView(button("Save as · "+audioFormatLabel,"audio-format",v->actions.run("audio-format","")));
+        content.addView(button("Music details & artwork · "+(metadataEnabled?"On":"Off"),"embed-metadata",v->actions.run("embed-metadata","")));
         gap(14);
         if(results.length()==0) {
             content.addView(text("Save a song or a whole playlist.",18,INK,true)); gap(8);

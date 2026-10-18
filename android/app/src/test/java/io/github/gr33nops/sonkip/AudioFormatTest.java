@@ -11,11 +11,13 @@ import static org.junit.Assert.*;
 @Config(sdk = 28)
 public class AudioFormatTest {
     @Test public void requestBodiesIncludeTheSelectedAudioFormat() throws Exception {
-        JSONObject song = MainActivity.downloadRequest("NMRhx71bGo4", "mp3");
+        JSONObject song = MainActivity.downloadRequest("NMRhx71bGo4", "mp3", false);
         assertEquals("NMRhx71bGo4", song.getString("video_id"));
         assertEquals("mp3", song.getString("audio_format"));
-        JSONObject playlist = MainActivity.playlistRequest("https://example.test/list", "flac");
+        assertFalse(song.getBoolean("embed_metadata"));
+        JSONObject playlist = MainActivity.playlistRequest("https://example.test/list", "flac", true);
         assertEquals("https://example.test/list", playlist.getString("url"));
         assertEquals("flac", playlist.getString("audio_format"));
+        assertTrue(playlist.getBoolean("embed_metadata"));
     }
 }

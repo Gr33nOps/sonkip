@@ -166,7 +166,7 @@ def test_download_rejects_unknown_audio_format(tmp_path):
         assert client.get("/api/jobs").json()["jobs"] == []
 
 
-def test_playlist_applies_selected_format_to_every_job(monkeypatch, tmp_path):
+def test_playlist_applies_format_and_metadata_preference_to_every_job(monkeypatch, tmp_path):
     import app.main as main
     monkeypatch.setattr(engine.DownloadManager, "_run", lambda *args: None)
     monkeypatch.setattr(main, "extract_playlist", lambda *args: {
@@ -180,9 +180,11 @@ def test_playlist_applies_selected_format_to_every_job(monkeypatch, tmp_path):
         response = client.post("/api/playlists", json={
             "url": "https://music.youtube.com/playlist?list=PLroadtrip",
             "audio_format": "flac",
+            "embed_metadata": False,
         })
         assert response.status_code == 202
         assert {job["audio_format"] for job in client.get("/api/jobs").json()["jobs"]} == {"flac"}
+        assert {job["embed_metadata"] for job in client.get("/api/jobs").json()["jobs"]} == {False}
 
 
 def test_no_open_host(tmp_path):

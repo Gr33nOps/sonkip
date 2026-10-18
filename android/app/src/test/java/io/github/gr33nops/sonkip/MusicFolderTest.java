@@ -30,6 +30,9 @@ public class MusicFolderTest {
         MusicFolder.copyTracks(context,android.net.Uri.parse("content://music-test/tree/root"),tracks);
         assertArrayEquals(new byte[]{1,2,3,4},java.nio.file.Files.readAllBytes(provider.output.toPath()));
         assertEquals("Artist - Song.webm",provider.name);
+        java.util.List<org.robolectric.shadows.ShadowContentResolver.NotifiedUri> notified=
+            org.robolectric.Shadows.shadowOf(context.getContentResolver()).getNotifiedUris();
+        assertEquals(android.net.Uri.parse("content://music-test/document/song"),notified.get(notified.size()-1).uri);
         MusicFolder.copyTracks(context,android.net.Uri.parse("content://music-test/tree/root"),tracks);
         assertEquals(1,provider.created);
         assertTrue(audio.isFile());

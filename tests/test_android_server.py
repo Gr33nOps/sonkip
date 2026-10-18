@@ -129,12 +129,17 @@ def test_android_server_applies_selected_format_to_song_download(tmp_path: Path,
         status, payload = request_json(
             f"{base_url}/api/downloads",
             method="POST",
-            body={"video_id": "dQw4w9WgXcQ", "audio_format": "m4a"},
+            body={
+                "video_id": "dQw4w9WgXcQ",
+                "audio_format": "m4a",
+                "embed_metadata": False,
+            },
         )
         server.manager.futures[payload["job_id"]].result(timeout=3)
 
         assert status == 202
         assert server.manager.get_job(payload["job_id"])["audio_format"] == "m4a"
+        assert server.manager.get_job(payload["job_id"])["embed_metadata"] is False
     finally:
         server.manager.pool.shutdown(wait=True)
         server.shutdown()
@@ -162,13 +167,18 @@ def test_android_server_applies_selected_format_to_playlist_downloads(tmp_path: 
         status, payload = request_json(
             f"{base_url}/api/playlists",
             method="POST",
-            body={"url": "https://example.com/playlist", "audio_format": "opus"},
+            body={
+                "url": "https://example.com/playlist",
+                "audio_format": "opus",
+                "embed_metadata": False,
+            },
         )
         job_id = payload["jobs"][0]["job_id"]
         server.manager.futures[job_id].result(timeout=3)
 
         assert status == 202
         assert server.manager.get_job(job_id)["audio_format"] == "opus"
+        assert server.manager.get_job(job_id)["embed_metadata"] is False
     finally:
         server.manager.pool.shutdown(wait=True)
         server.shutdown()

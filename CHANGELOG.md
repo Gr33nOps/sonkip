@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.0
+
+- Add an optional **Music details & artwork** setting for new downloads. It is enabled by default and remembered separately on Android and desktop.
+- Embed standard title, artist, album, track, year, genre, and cover tags in M4A, MP3, FLAC, and Opus files when the source provides them.
+- Keep metadata failures non-fatal so an unavailable thumbnail or malformed source tag never discards playable audio.
+- Notify Android's document provider after copying a song to the selected Music folder so other players can refresh it promptly.
+
 ## 2.4.1
 
 - Add a remembered output-format choice for new songs and whole playlists.

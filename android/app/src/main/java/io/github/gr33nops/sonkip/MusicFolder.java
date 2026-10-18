@@ -62,6 +62,7 @@ final class MusicFolder {
                     if(output==null)throw new IOException("Cannot write audio in this folder");
                     byte[] b=new byte[65536];int n;while((n=input.read(b))!=-1){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("Copy interrupted");output.write(b,0,n);}
                 }
+                resolver.notifyChange(outputUri,null);
                 if(!prefs(context).edit().putString(key,outputUri.toString()).commit())throw new IOException("Cannot remember copied song");
             }catch(Exception error){try{DocumentsContract.deleteDocument(resolver,outputUri);}catch(Exception ignored){}throw error;}
         }

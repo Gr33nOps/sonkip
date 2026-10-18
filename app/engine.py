@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import os
+import base64
 import shutil
 import threading
 import uuid
@@ -23,6 +24,7 @@ VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 URL_RE = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
 AUDIO_FORMATS = {"original", "mp3", "m4a", "opus", "flac", "webm"}
 CONVERTED_AUDIO_FORMATS = {"mp3", "m4a", "opus", "flac"}
+MAX_ARTWORK_BYTES = 8 * 1024 * 1024
 
 # Android does not bundle the desktop browser-based token provider.
 COOKIE_FREE_YOUTUBE_ARGS = {
@@ -99,6 +101,130 @@ def youtube_access_options(cookiefile: Path | None = None) -> dict[str, Any]:
     # automatically by the installed local browser provider. Safari may offer
     # only obsolete direct URLs (403), even when it generates a valid token.
     return {**options, "extractor_args": COOKIE_FREE_YOUTUBE_ARGS if runtime else DESKTOP_YOUTUBE_ARGS}
+
+
+def _music_details(info: dict[str, Any]) -> dict[str, Any]:
+    artist = str(info.get("artist") or info.get("uploader") or "Unknown artist").strip()
+    artist = re.sub(r"\s+-\s+Topic$", "", artist, flags=re.IGNORECASE).strip() or "Unknown artist"
+    title = str(info.get("track") or info.get("title") or "Untitled").strip()
+    title = re.sub(
+        r"^" + re.escape(artist) + r"\s*[-–—:]\s*",
+        "",
+        title,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip() or title
+    year = info.get("release_year")
+    if not year and info.get("release_date"):
+        year = str(info["release_date"])[:4]
+    return {
+        "title": title,
+        "artist": artist,
+        "album": str(info.get("album") or "").strip(),
+        "track_number": info.get("track_number"),
+        "year": str(year).strip() if year else "",
+        "genre": str(info.get("genre") or "").strip(),
+    }
+
+
+def _download_artwork(video_id: str) -> tuple[bytes, str] | None:
+    request = urllib.request.Request(
+        f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+        headers={"User-Agent": "Sonkip/2"},
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        artwork = response.read(MAX_ARTWORK_BYTES + 1)
+        content_type = str(response.headers.get("Content-Type", "image/jpeg")).split(";", 1)[0].lower()
+    if not artwork or len(artwork) > MAX_ARTWORK_BYTES or content_type not in ("image/jpeg", "image/png"):
+        return None
+    return artwork, content_type
+
+
+def _embed_music_metadata(path: Path, info: dict[str, Any], video_id: str) -> bool:
+    extension = path.suffix.lower()
+    if extension not in (".m4a", ".mp4", ".mp3", ".flac", ".opus", ".ogg"):
+        return False
+    details = _music_details(info)
+    try:
+        artwork = _download_artwork(video_id)
+    except (OSError, ValueError):
+        artwork = None
+    if extension in (".m4a", ".mp4"):
+        from mutagen.mp4 import MP4, MP4Cover
+
+        audio = MP4(path)
+        if audio.tags is None:
+            audio.add_tags()
+        audio.tags["\xa9nam"] = [details["title"]]
+        audio.tags["\xa9ART"] = [details["artist"]]
+        audio.tags["aART"] = [details["artist"]]
+        if details["album"]:
+            audio.tags["\xa9alb"] = [details["album"]]
+        if isinstance(details["track_number"], int) and details["track_number"] > 0:
+            audio.tags["trkn"] = [(details["track_number"], 0)]
+        if details["year"]:
+            audio.tags["\xa9day"] = [details["year"]]
+        if details["genre"]:
+            audio.tags["\xa9gen"] = [details["genre"]]
+        if artwork:
+            data, content_type = artwork
+            image_format = MP4Cover.FORMAT_PNG if content_type == "image/png" else MP4Cover.FORMAT_JPEG
+            audio.tags["covr"] = [MP4Cover(data, imageformat=image_format)]
+        audio.save()
+    elif extension == ".mp3":
+        from mutagen.id3 import APIC, TALB, TCON, TDRC, TIT2, TPE1, TRCK
+        from mutagen.mp3 import MP3
+
+        audio = MP3(path)
+        if audio.tags is None:
+            audio.add_tags()
+        for frame in ("TIT2", "TPE1", "TALB", "TRCK", "TDRC", "TCON", "APIC"):
+            audio.tags.delall(frame)
+        audio.tags.add(TIT2(encoding=3, text=details["title"]))
+        audio.tags.add(TPE1(encoding=3, text=details["artist"]))
+        if details["album"]:
+            audio.tags.add(TALB(encoding=3, text=details["album"]))
+        if isinstance(details["track_number"], int) and details["track_number"] > 0:
+            audio.tags.add(TRCK(encoding=3, text=str(details["track_number"])))
+        if details["year"]:
+            audio.tags.add(TDRC(encoding=3, text=details["year"]))
+        if details["genre"]:
+            audio.tags.add(TCON(encoding=3, text=details["genre"]))
+        if artwork:
+            data, content_type = artwork
+            audio.tags.add(APIC(encoding=3, mime=content_type, type=3, desc="Cover", data=data))
+        audio.save(v2_version=3)
+    else:
+        from mutagen.flac import FLAC, Picture
+        from mutagen.oggopus import OggOpus
+
+        audio = FLAC(path) if extension == ".flac" else OggOpus(path)
+        audio["title"] = [details["title"]]
+        audio["artist"] = [details["artist"]]
+        if details["album"]:
+            audio["album"] = [details["album"]]
+        if isinstance(details["track_number"], int) and details["track_number"] > 0:
+            audio["tracknumber"] = [str(details["track_number"])]
+        if details["year"]:
+            audio["date"] = [details["year"]]
+        if details["genre"]:
+            audio["genre"] = [details["genre"]]
+        if artwork:
+            data, content_type = artwork
+            picture = Picture()
+            picture.type = 3
+            picture.mime = content_type
+            picture.desc = "Cover"
+            picture.data = data
+            if extension == ".flac":
+                audio.clear_pictures()
+                audio.add_picture(picture)
+            else:
+                audio["metadata_block_picture"] = [
+                    base64.b64encode(picture.write()).decode("ascii")
+                ]
+        audio.save()
+    return True
 
 
 def get_stream_url(video_id: str, cookiefile: Path | None = None) -> str | None:
@@ -334,7 +460,12 @@ class DownloadManager:
                 self.jobs[job_id].update(changes)
                 self.store.save_job(self.jobs[job_id])
 
-    def start(self, video_id: str, audio_format: str = "original"):
+    def start(
+        self,
+        video_id: str,
+        audio_format: str = "original",
+        embed_metadata: bool = True,
+    ):
         if not VIDEO_ID_RE.fullmatch(video_id):
             raise ValueError("Invalid video ID")
         audio_format = normalize_audio_format(audio_format)
@@ -351,6 +482,7 @@ class DownloadManager:
                     'speed': None, 'eta': None, 'error': None, 'track_id': saved['id'],
                     'created_at': datetime.now(timezone.utc).isoformat(), 'already_saved': True,
                     'title': saved['title'], 'artist': saved['artist'], 'audio_format': audio_format,
+                    'embed_metadata': bool(embed_metadata),
                 }
                 self.store.save_job(self.jobs[job_id])
                 return job_id
@@ -378,10 +510,13 @@ class DownloadManager:
                 "track_id": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "audio_format": audio_format,
+                "embed_metadata": bool(embed_metadata),
             }
             self.store.save_job(self.jobs[job_id])
             self.cancellations[job_id] = threading.Event()
-            self.futures[job_id] = self.pool.submit(self._run, job_id, video_id, audio_format)
+            self.futures[job_id] = self.pool.submit(
+                self._run, job_id, video_id, audio_format, bool(embed_metadata)
+            )
         return job_id
 
     def cancel(self, job_id: str):
@@ -402,17 +537,31 @@ class DownloadManager:
         for job in self.list_jobs():
             if job['status'] == 'error' and not job.get('cancelled'):
                 try:
-                    retried.append(self.start(job['video_id'], job.get('audio_format', 'original')))
+                    retried.append(self.start(
+                        job['video_id'],
+                        job.get('audio_format', 'original'),
+                        job.get('embed_metadata', True),
+                    ))
                 except ValueError:
                     # A cancelled worker may still be returning from a network call.
                     continue
         return retried
 
     def resume_interrupted(self):
-        return [self.start(job['video_id'], job.get('audio_format', 'original')) for job in self.list_jobs()
+        return [self.start(
+                    job['video_id'],
+                    job.get('audio_format', 'original'),
+                    job.get('embed_metadata', True),
+                ) for job in self.list_jobs()
                 if job.get('interrupted') and not job.get('cancelled') and job['status'] == 'error']
 
-    def _run(self, job_id: str, video_id: str, audio_format: str = "original"):
+    def _run(
+        self,
+        job_id: str,
+        video_id: str,
+        audio_format: str = "original",
+        embed_metadata: bool = True,
+    ):
         cancelled = self.cancellations[job_id]
         if cancelled.is_set():
             return
@@ -512,6 +661,14 @@ class DownloadManager:
                     raise RuntimeError("Android could not extract the AAC audio track")
                 path.unlink()
                 path = target
+            metadata_embedded = False
+            if embed_metadata:
+                try:
+                    metadata_embedded = _embed_music_metadata(path, info, video_id)
+                except Exception:
+                    # Music details are an enhancement; a playable download should
+                    # remain available if artwork or a malformed source tag fails.
+                    metadata_embedded = False
             selected = (info.get("requested_downloads") or [{}])[0]
             codec = audio_format if audio_format in CONVERTED_AUDIO_FORMATS else selected.get("acodec") or info.get("acodec")
             abr = selected.get("abr") or info.get("abr")
@@ -532,7 +689,8 @@ class DownloadManager:
                     raise RuntimeError('Cancelled. Retry to resume.')
                 self.store.add_track(track)
                 self.jobs[job_id].update(status='complete', percent=100, track_id=job_id, error=None, speed=None, eta=None,
-                                         title=track['title'], artist=track['artist'])
+                                         title=track['title'], artist=track['artist'],
+                                         metadata_embedded=metadata_embedded)
                 self.store.save_job(self.jobs[job_id])
         except Exception as exc:
             # yt-dlp can fail due to deleted, blocked or unavailable content.

@@ -16,8 +16,8 @@ public class UpgradePathTest {
         Context context = RuntimeEnvironment.getApplication();
         PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         assertTrue(
-            "The fixed audio-format runtime must replace the earlier format build",
-            packageInfo.getLongVersionCode() > 18
+            "The metadata runtime must replace the 2.4.1 format build",
+            packageInfo.getLongVersionCode() > 19
         );
     }
 }

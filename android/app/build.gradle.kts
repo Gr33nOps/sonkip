@@ -22,8 +22,8 @@ android {
         applicationId = "io.github.gr33nops.sonkip"
         minSdk = 24
         targetSdk = 35
-        versionCode = 19
-        versionName = "2.4.1"
+        versionCode = 20
+        versionName = "2.5.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -68,6 +68,7 @@ chaquopy {
         pip {
             install("yt-dlp==2026.8.19")
             install("yt-dlp-ejs==0.8.0")
+            install("mutagen==1.48.1")
         }
     }
     sourceSets {

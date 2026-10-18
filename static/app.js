@@ -24,6 +24,7 @@
     )
       ? localStorage.getItem("sonkip-audio-format")
       : "original",
+    embedMetadata: localStorage.getItem("sonkip-embed-metadata") !== "false",
   };
 
   const $ = (id) => document.getElementById(id);
@@ -303,7 +304,11 @@
     try {
       const data = await api("/api/playlists", {
         method: "POST",
-        body: JSON.stringify({ url, audio_format: state.audioFormat }),
+        body: JSON.stringify({
+          url,
+          audio_format: state.audioFormat,
+          embed_metadata: state.embedMetadata,
+        }),
       });
       state.playlist = {
         title: data.title,
@@ -374,7 +379,11 @@
     try {
       const res = await api("/api/downloads", {
         method: "POST",
-        body: JSON.stringify({ video_id: videoId, audio_format: state.audioFormat }),
+        body: JSON.stringify({
+          video_id: videoId,
+          audio_format: state.audioFormat,
+          embed_metadata: state.embedMetadata,
+        }),
       });
       const jobId = res.job_id;
       pollJob(jobId, videoId, title);
@@ -671,6 +680,16 @@
     state.audioFormat = event.target.value;
     localStorage.setItem("sonkip-audio-format", state.audioFormat);
     showToast(`New downloads will be saved as ${event.target.selectedOptions[0].textContent.split(" · ")[0]}.`);
+  });
+  $("embed-metadata").checked = state.embedMetadata;
+  $("embed-metadata").addEventListener("change", (event) => {
+    state.embedMetadata = event.target.checked;
+    localStorage.setItem("sonkip-embed-metadata", String(state.embedMetadata));
+    showToast(
+      state.embedMetadata
+        ? "New downloads will include song details and artwork."
+        : "Song details and artwork are off for new downloads.",
+    );
   });
 
   $("brand-btn").addEventListener("click", () => {

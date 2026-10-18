@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 class DownloadRequest(BaseModel):
     video_id: str
     audio_format: str = "original"
+    embed_metadata: bool = True
 
 
 class MusicFolderRequest(BaseModel):
@@ -32,6 +33,7 @@ class MusicFolderRequest(BaseModel):
 class PlaylistRequest(BaseModel):
     url: str
     audio_format: str = "original"
+    embed_metadata: bool = True
 
 
 class YoutubeAuthRequest(BaseModel):
@@ -129,7 +131,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @app.post("/api/downloads", status_code=202)
     def download(body: DownloadRequest):
         try:
-            job_id = manager.start(body.video_id, body.audio_format)
+            job_id = manager.start(body.video_id, body.audio_format, body.embed_metadata)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RuntimeError as exc:
@@ -143,7 +145,12 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 extract_playlist, body.url, store.youtube_cookies_path
             )
             jobs = [
-                {**entry, "job_id": manager.start(entry["video_id"], body.audio_format)}
+                {
+                    **entry,
+                    "job_id": manager.start(
+                        entry["video_id"], body.audio_format, body.embed_metadata
+                    ),
+                }
                 for entry in playlist["entries"]
                 if not entry.get('needs_review')
             ]

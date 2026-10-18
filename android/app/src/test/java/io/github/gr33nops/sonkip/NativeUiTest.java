@@ -88,4 +88,10 @@ public class NativeUiTest {
         ui.findViewWithTag("audio-format").performClick();
         assertEquals("audio-format", action);
     }
+    @Test public void findScreenExposesMusicDetailsAndArtworkToggle() {
+        NativeUi ui = screen();
+        assertNotNull(ui.findViewWithTag("embed-metadata"));
+        ui.findViewWithTag("embed-metadata").performClick();
+        assertEquals("embed-metadata", action);
+    }
 }

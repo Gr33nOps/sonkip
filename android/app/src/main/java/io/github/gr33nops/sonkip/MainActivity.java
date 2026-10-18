@@ -40,13 +40,16 @@ public class MainActivity extends Activity {
     private PlaylistStore playlists;
     private boolean backupBusy;
     private String audioFormat="original";
+    private boolean embedMetadata=true;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         playlists=new PlaylistStore(this);
         ui = new NativeUi(this, this::action);
         audioFormat=getSharedPreferences("sonkip",MODE_PRIVATE).getString("audio_format","original");
+        embedMetadata=getSharedPreferences("sonkip",MODE_PRIVATE).getBoolean("embed_metadata",true);
         ui.setAudioFormatLabel(audioFormatLabel(audioFormat));
+        ui.setMetadataEnabled(embedMetadata);
         setContentView(ui);
         ui.setOnApplyWindowInsetsListener((view,insets) -> {
             if(Build.VERSION.SDK_INT >= 30) {
@@ -131,6 +134,7 @@ public class MainActivity extends Activity {
                 case "library-backup": backupMenu();break;
                 case "music-folder": musicFolderMenu();break;
                 case "audio-format": audioFormatMenu();break;
+                case "embed-metadata": toggleMetadata();break;
                 case "player-options": playerOptions();break;
                 case "retry-failed": downloadAction("/api/jobs/retry-failed");break;
                 case "cancel-download": downloadAction("/api/jobs/"+value+"/cancel");break;
@@ -155,7 +159,7 @@ public class MainActivity extends Activity {
                 Uri uri=Uri.parse(query);
                 boolean playlist=uri.isHierarchical() && (uri.getQueryParameterNames().contains("list")
                         || "open.spotify.com".equals(uri.getHost()) || "soundcloud.com".equals(uri.getHost()) || "www.soundcloud.com".equals(uri.getHost()));
-                JSONObject result=playlist ? request("POST","/api/playlists",playlistRequest(query,audioFormat))
+                JSONObject result=playlist ? request("POST","/api/playlists",playlistRequest(query,audioFormat,embedMetadata))
                     : request("GET","/api/search?q="+URLEncoder.encode(query,"UTF-8"),null);
                 main.post(() -> {
                     if(isDestroyed())return;
@@ -184,16 +188,16 @@ public class MainActivity extends Activity {
     private void save(String video) {
         DownloadService.begin(this);
         requests.execute(() -> {
-            try {request("POST","/api/downloads",downloadRequest(video,audioFormat));main.post(() -> {ui.showTab("downloads");ui.notice("Song queued · "+audioFormatLabel(audioFormat),false);refresh();});}
+            try {request("POST","/api/downloads",downloadRequest(video,audioFormat,embedMetadata));main.post(() -> {ui.showTab("downloads");ui.notice("Song queued · "+audioFormatLabel(audioFormat),false);refresh();});}
             catch(Exception error) {main.post(() -> ui.notice(error.getMessage(),true));}
             finally {DownloadService.end();}
         });
     }
-    static JSONObject downloadRequest(String video, String audioFormat) throws org.json.JSONException {
-        return new JSONObject().put("video_id",video).put("audio_format",audioFormat);
+    static JSONObject downloadRequest(String video, String audioFormat, boolean embedMetadata) throws org.json.JSONException {
+        return new JSONObject().put("video_id",video).put("audio_format",audioFormat).put("embed_metadata",embedMetadata);
     }
-    static JSONObject playlistRequest(String url, String audioFormat) throws org.json.JSONException {
-        return new JSONObject().put("url",url).put("audio_format",audioFormat);
+    static JSONObject playlistRequest(String url, String audioFormat, boolean embedMetadata) throws org.json.JSONException {
+        return new JSONObject().put("url",url).put("audio_format",audioFormat).put("embed_metadata",embedMetadata);
     }
     private static String audioFormatLabel(String value) {
         if("m4a".equals(value))return "M4A / AAC";
@@ -212,6 +216,12 @@ public class MainActivity extends Activity {
                 ui.notice("New downloads: "+audioFormatLabel(audioFormat),false);
                 dialog.dismiss();
             }).setNegativeButton("Cancel",null).show();
+    }
+    private void toggleMetadata() {
+        embedMetadata=!embedMetadata;
+        getSharedPreferences("sonkip",MODE_PRIVATE).edit().putBoolean("embed_metadata",embedMetadata).apply();
+        ui.setMetadataEnabled(embedMetadata);
+        ui.notice(embedMetadata ? "New downloads will include song details and artwork." : "Song details and artwork are off for new downloads.",false);
     }
     private void downloadAction(String path) {
         DownloadService.begin(this);

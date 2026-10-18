@@ -48,26 +48,26 @@ test('opening download history twice never creates duplicate pollers', () => {
   assert.equal(timers,1);
 });
 
-test('song download sends the selected audio format', async () => {
+test('song download sends the selected audio format and metadata preference', async () => {
   let request;
   const code=source.slice(source.indexOf('  async function startDownload('),source.indexOf('  function pollJob('));
-  const context={state:{audioFormat:'mp3',activeJobs:new Map()},showToast:()=>{},render:()=>{},
+  const context={state:{audioFormat:'mp3',embedMetadata:false,activeJobs:new Map()},showToast:()=>{},render:()=>{},
     api:async(path,options)=>{request={path,body:JSON.parse(options.body)};return {job_id:'job'};},pollJob:()=>{}};
   vm.runInNewContext(code,context);
   await context.startDownload('NMRhx71bGo4','Let It Happen','Tame Impala');
-  assert.deepEqual(request,{path:'/api/downloads',body:{video_id:'NMRhx71bGo4',audio_format:'mp3'}});
+  assert.deepEqual(request,{path:'/api/downloads',body:{video_id:'NMRhx71bGo4',audio_format:'mp3',embed_metadata:false}});
 });
 
-test('playlist download sends the selected audio format', async () => {
+test('playlist download sends the selected audio format and metadata preference', async () => {
   let request;
   const code=source.slice(source.indexOf('  async function startPlaylist('),source.indexOf('  function updatePlaylistProgress('));
   const nodes=new Map([
     ['playlist-progress',{hidden:true}],['playlist-title',{textContent:''}],['playlist-count',{textContent:''}],
     ['playlist-meter-fill',{style:{width:''}}],
   ]);
-  const context={state:{audioFormat:'opus',activeJobs:new Map()},$:id=>nodes.get(id),showToast:()=>{},render:()=>{},pollJob:()=>{},
+  const context={state:{audioFormat:'opus',embedMetadata:true,activeJobs:new Map()},$:id=>nodes.get(id),showToast:()=>{},render:()=>{},pollJob:()=>{},
     api:async(path,options)=>{request={path,body:JSON.parse(options.body)};return {title:'Mix',count:0,jobs:[],review:[],unmatched:[],source_count:0,notice:''};}};
   vm.runInNewContext(code,context);
   await context.startPlaylist('https://music.youtube.com/playlist?list=PLroadtrip');
-  assert.deepEqual(request,{path:'/api/playlists',body:{url:'https://music.youtube.com/playlist?list=PLroadtrip',audio_format:'opus'}});
+  assert.deepEqual(request,{path:'/api/playlists',body:{url:'https://music.youtube.com/playlist?list=PLroadtrip',audio_format:'opus',embed_metadata:true}});
 });
