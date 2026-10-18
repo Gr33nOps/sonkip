@@ -1067,3 +1067,233 @@ a {
  #folder-dialog::backdrop { background: #0009; }
  #folder-dialog input { display: block; width: 100%; margin: 12px 0; padding: 12px; }
  #folder-dialog button { padding: 10px 14px; margin: 6px 4px 0 0; cursor: pointer; }
+
+/* Phone layout: preserve the editorial desktop design while giving each
+   control a deliberate, touch-friendly place on narrow screens. */
+@media (max-width: 600px) {
+  .site-header {
+    height: 64px;
+    grid-template-columns: auto 1fr auto;
+    gap: 8px;
+    padding: 0 14px;
+  }
+
+  .brand {
+    font-size: 21px;
+  }
+
+  .header-nav {
+    justify-self: center;
+    min-width: 0;
+  }
+
+  .nav-tab {
+    min-width: 0;
+    padding: 0 9px;
+    font-size: 8px;
+  }
+
+  .nav-tab b {
+    margin-left: 3px;
+  }
+
+  .auth-open-btn {
+    min-height: 34px;
+    padding: 8px 9px;
+    font-size: 7px;
+  }
+
+  .hero {
+    min-height: 0;
+    padding: 48px 20px 54px;
+  }
+
+  .eyebrow {
+    line-height: 1.6;
+  }
+
+  .hero-title {
+    margin: 34px 0 24px;
+    line-height: 0.8;
+  }
+
+  .hero-copy {
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .record-stage {
+    margin-top: 42px;
+  }
+
+  .workspace,
+  .pages-install {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  .workspace-head {
+    margin-bottom: 36px;
+  }
+
+  .workspace-head > div {
+    gap: 13px;
+  }
+
+  .workspace-head p {
+    margin-left: 47px;
+    max-width: 220px;
+    line-height: 1.55;
+  }
+
+  .mode-switch {
+    gap: 18px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .mode-btn {
+    flex: 0 0 auto;
+  }
+
+  .search-box {
+    min-height: 70px;
+    grid-template-columns: minmax(0, 1fr) 58px;
+  }
+
+  .search-submit {
+    height: 48px;
+    margin-right: 10px;
+  }
+
+  .search-clear {
+    right: 67px;
+  }
+
+  .playlist-progress {
+    margin-top: 30px;
+    padding: 17px;
+    gap: 14px;
+  }
+
+  .track-list {
+    margin-top: 38px;
+  }
+
+  .track-item {
+    align-items: start;
+    padding: 17px 0;
+  }
+
+  .track-actions {
+    padding-top: 5px;
+  }
+
+  .track-download-btn {
+    min-height: 38px;
+  }
+
+  .library-tools {
+    gap: 8px;
+  }
+
+  .library-tools input[type="search"] {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .library-tools input,
+  .library-tools select,
+  .library-tools button {
+    max-width: 100%;
+  }
+
+  #folder-dialog {
+    width: calc(100% - 24px);
+    max-height: calc(100% - 24px);
+    padding: 20px;
+  }
+
+  .pages-install .step {
+    position: static;
+    margin-bottom: 30px;
+  }
+
+  .pages-install h2 {
+    margin: 28px 0;
+  }
+
+  .install-command {
+    margin-top: 16px;
+    box-shadow: 5px 5px 0 rgba(232, 255, 0, 0.16);
+  }
+
+  .install-command code {
+    padding: 17px 14px;
+    font-size: 10px;
+  }
+
+  .primary-link {
+    width: 100%;
+    text-align: center;
+  }
+
+  .site-footer {
+    min-height: 0;
+    gap: 12px;
+    padding: 20px;
+  }
+
+  .site-footer a {
+    text-align: right;
+    line-height: 1.4;
+  }
+
+  .player-bar {
+    bottom: 10px;
+    width: calc(100% - 24px);
+    grid-template-columns: 42px minmax(0, 1fr) 42px 26px;
+    gap: 8px;
+    padding: 9px 10px;
+    box-shadow: 5px 5px 0 var(--orange);
+  }
+
+  .player-close-btn {
+    min-width: 26px;
+    min-height: 38px;
+  }
+
+  .toast {
+    top: 74px;
+    right: 12px;
+    left: 12px;
+    max-width: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .site-header {
+    padding: 0 10px;
+    gap: 4px;
+  }
+
+  .brand {
+    font-size: 19px;
+  }
+
+  .nav-tab {
+    padding: 0 6px;
+  }
+
+  .nav-tab b {
+    display: none;
+  }
+
+  .auth-open-btn {
+    padding: 8px 7px;
+  }
+
+  .track-download-btn span {
+    display: none;
+  }
+}
