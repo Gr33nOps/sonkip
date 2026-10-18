@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 2.4.1
 
 - Add a remembered output-format choice for new songs and whole playlists.
 - Support Original, MP3, M4A, Opus, and FLAC on desktop; Android offers Original, M4A/AAC, and Opus/WebM without cloud conversion.
 - Preserve the selected format across retries and interrupted-download recovery.
+- Fix the Android localhost bridge so song and playlist downloads keep the chosen format, and advance the APK version so the corrected bundled runtime replaces 2.3.1 cleanly.
+- When YouTube exposes AAC only inside an MP4 stream on Android, extract it locally into an audio-only M4A file without transcoding.
 
 ## 2.3.1
 

@@ -227,7 +227,10 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/downloads":
             try:
-                job_id = self.server.manager.start(str(body.get("video_id", "")))
+                job_id = self.server.manager.start(
+                    str(body.get("video_id", "")),
+                    str(body.get("audio_format", "original")),
+                )
             except ValueError as exc:
                 self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": str(exc)})
             except RuntimeError as exc:
@@ -245,12 +248,18 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/playlists":
             try:
+                audio_format = str(body.get("audio_format", "original"))
                 playlist = extract_playlist(
                     str(body.get("url", "")),
                     self.server.store.youtube_cookies_path,
                 )
                 jobs = [
-                    {**entry, "job_id": self.server.manager.start(entry["video_id"])}
+                    {
+                        **entry,
+                        "job_id": self.server.manager.start(
+                            entry["video_id"], audio_format
+                        ),
+                    }
                     for entry in playlist["entries"]
                     if not entry.get('needs_review')
                 ]

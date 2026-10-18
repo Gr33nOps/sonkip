@@ -22,8 +22,8 @@ android {
         applicationId = "io.github.gr33nops.sonkip"
         minSdk = 24
         targetSdk = 35
-        versionCode = 16
-        versionName = "2.3.1"
+        versionCode = 19
+        versionName = "2.4.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")

@@ -116,6 +116,66 @@ def test_android_server_rejects_invalid_download_id(tmp_path: Path):
         thread.join(timeout=3)
 
 
+def test_android_server_applies_selected_format_to_song_download(tmp_path: Path, monkeypatch):
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("sonkip", encoding="utf-8")
+    server = create_android_server(tmp_path / "music", static_dir, port=0)
+    monkeypatch.setattr(server.manager, "_run", lambda *args: None)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        status, payload = request_json(
+            f"{base_url}/api/downloads",
+            method="POST",
+            body={"video_id": "dQw4w9WgXcQ", "audio_format": "m4a"},
+        )
+        server.manager.futures[payload["job_id"]].result(timeout=3)
+
+        assert status == 202
+        assert server.manager.get_job(payload["job_id"])["audio_format"] == "m4a"
+    finally:
+        server.manager.pool.shutdown(wait=True)
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+def test_android_server_applies_selected_format_to_playlist_downloads(tmp_path: Path, monkeypatch):
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("sonkip", encoding="utf-8")
+    server = create_android_server(tmp_path / "music", static_dir, port=0)
+    monkeypatch.setattr(server.manager, "_run", lambda *args: None)
+    monkeypatch.setattr(
+        "app.android_server.extract_playlist",
+        lambda *args: {
+            "title": "Test playlist",
+            "entries": [{"video_id": "dQw4w9WgXcQ", "title": "Test song"}],
+        },
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        status, payload = request_json(
+            f"{base_url}/api/playlists",
+            method="POST",
+            body={"url": "https://example.com/playlist", "audio_format": "opus"},
+        )
+        job_id = payload["jobs"][0]["job_id"]
+        server.manager.futures[job_id].result(timeout=3)
+
+        assert status == 202
+        assert server.manager.get_job(job_id)["audio_format"] == "opus"
+    finally:
+        server.manager.pool.shutdown(wait=True)
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
 def test_android_server_accepts_android_string_paths(tmp_path: Path):
     static_dir = tmp_path / "static"
     static_dir.mkdir()

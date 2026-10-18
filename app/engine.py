@@ -51,7 +51,13 @@ def audio_download_options(audio_format: str) -> dict[str, Any]:
     if audio_format == "webm":
         return {"format": "bestaudio[ext=webm][acodec^=opus]/bestaudio[ext=webm]"}
     if os.environ.get("SONKIP_ANDROID_TOKENS") == "1" and audio_format == "m4a":
-        return {"format": "bestaudio[ext=m4a][acodec!=none]/bestaudio[acodec^=mp4a][ext=m4a]"}
+        return {
+            "format": (
+                "bestaudio[ext=m4a][acodec!=none]/"
+                "bestaudio[acodec^=mp4a][ext=m4a]/"
+                "best[ext=mp4][acodec^=mp4a]"
+            )
+        }
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         try:
@@ -494,6 +500,18 @@ class DownloadManager:
             if not matching:
                 raise RuntimeError("Download ended without an audio file")
             path = max(matching, key=lambda p: p.stat().st_size)
+            if (os.environ.get("SONKIP_ANDROID_TOKENS") == "1"
+                    and audio_format == "m4a" and path.suffix.lower() != ".m4a"):
+                from java import jclass
+                target = path.with_suffix(".m4a")
+                target.unlink(missing_ok=True)
+                jclass("io.github.gr33nops.sonkip.AndroidAudioExtractor").extractM4a(
+                    str(path), str(target)
+                )
+                if not target.is_file() or target.stat().st_size == 0:
+                    raise RuntimeError("Android could not extract the AAC audio track")
+                path.unlink()
+                path = target
             selected = (info.get("requested_downloads") or [{}])[0]
             codec = audio_format if audio_format in CONVERTED_AUDIO_FORMATS else selected.get("acodec") or info.get("acodec")
             abr = selected.get("abr") or info.get("abr")
