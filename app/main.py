@@ -6,25 +6,42 @@ import os
 import re
 import tempfile
 import zipfile
+import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.background import BackgroundTask
 
-from .engine import DownloadManager, extract_playlist, get_stream_url, search_music, VIDEO_ID_RE
+from .engine import DownloadManager, extract_playlist, get_stream_url, search_music, VIDEO_ID_RE, resolve_music_metadata
 from .storage import MusicStore
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+class TrackMetadata(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    artist: str | None = Field(default=None, max_length=300)
+    album: str | None = Field(default=None, max_length=300)
+    album_artist: str | None = Field(default=None, max_length=300)
+    artwork_url: str | None = Field(default=None, max_length=1000)
+    track_number: int | None = Field(default=None, ge=1, le=10000)
+    release_date: str | None = Field(default=None, max_length=20)
+    release_id: str | None = Field(default=None, max_length=200)
+    release_type: str | None = Field(default=None, max_length=40)
+    duration: int | None = Field(default=None, ge=0, le=86400)
 
 
 class DownloadRequest(BaseModel):
     video_id: str
     audio_format: str = "m4a"
     embed_metadata: bool = True
+    metadata: TrackMetadata | None = None
 
 
 class MusicFolderRequest(BaseModel):
@@ -33,6 +50,11 @@ class MusicFolderRequest(BaseModel):
 
 class PlaylistRequest(BaseModel):
     url: str
+
+
+class PlaylistDownloadRequest(BaseModel):
+    preview_id: str
+    video_ids: list[str]
     audio_format: str = "m4a"
     embed_metadata: bool = True
 
@@ -51,10 +73,18 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     home = data_dir or Path(os.getenv("LOCALMUSIC_HOME", default_home))
     store = MusicStore(home)
     manager = DownloadManager(store)
-    app = FastAPI(title="sonkip. Local API", version="1.2.0")
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        try:
+            yield
+        finally:
+            manager.pool.shutdown(wait=True)
+
+    app = FastAPI(title="sonkip. Local API", version="1.2.0", lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     app.state.store = store
     app.state.manager = manager
+    app.state.playlist_previews: dict[str, dict[str, Any]] = {}
 
     @app.get('/api/music-folder')
     def music_folder():
@@ -136,39 +166,57 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @app.post("/api/downloads", status_code=202)
     def download(body: DownloadRequest):
         try:
-            job_id = manager.start(body.video_id, body.audio_format, body.embed_metadata)
+            metadata = body.metadata.model_dump(exclude_none=True) if body.metadata else None
+            job_id = manager.start(body.video_id, body.audio_format, body.embed_metadata, metadata)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
         return {"job_id": job_id}
 
-    @app.post("/api/playlists", status_code=202)
-    async def download_playlist(body: PlaylistRequest):
+    @app.post("/api/playlists")
+    async def preview_playlist(body: PlaylistRequest):
         try:
             playlist = await asyncio.to_thread(
                 extract_playlist, body.url, store.youtube_cookies_path
             )
-            jobs = [
-                {
-                    **entry,
-                    "job_id": manager.start(
-                        entry["video_id"], body.audio_format, body.embed_metadata
-                    ),
-                }
-                for entry in playlist["entries"]
-                if not entry.get('needs_review')
-            ]
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Playlist provider unavailable: {str(exc)[:220]}") from exc
+        entries = []
+        for item in playlist["entries"]:
+            metadata = resolve_music_metadata(item)
+            entries.append({**item, **metadata, "thumbnail": metadata["artwork_url"], "selected": True})
+        preview_id = uuid.uuid4().hex
+        app.state.playlist_previews[preview_id] = {"title": playlist["title"], "entries": entries}
+        while len(app.state.playlist_previews) > 20:
+            app.state.playlist_previews.pop(next(iter(app.state.playlist_previews)))
+        return {"preview_id": preview_id, "title": playlist["title"], "count": len(entries), "entries": entries,
+                "unmatched": playlist.get("unmatched", []), "notice": playlist.get("notice", ""),
+                "source_count": playlist.get("source_count", len(entries)),
+                "artwork_url": playlist.get("artwork_url", "")}
+
+    @app.post("/api/playlists/download", status_code=202)
+    def download_playlist(body: PlaylistDownloadRequest):
+        preview = app.state.playlist_previews.get(body.preview_id)
+        if preview is None:
+            raise HTTPException(status_code=404, detail="This playlist preview expired. Load it again.")
+        if not body.video_ids or len(body.video_ids) > 1000 or any(not VIDEO_ID_RE.fullmatch(value) for value in body.video_ids):
+            raise HTTPException(status_code=422, detail="Choose at least one valid song")
+        requested = set(body.video_ids)
+        entries = [entry for entry in preview["entries"] if entry["video_id"] in requested]
+        if len(entries) != len(requested):
+            raise HTTPException(status_code=422, detail="The selection does not belong to this playlist preview")
+        try:
+            jobs = [{**entry, "job_id": manager.start(
+                entry["video_id"], body.audio_format, body.embed_metadata, entry
+            )} for entry in entries]
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Playlist provider unavailable: {str(exc)[:220]}") from exc
-        return {"title": playlist["title"], "count": len(jobs), "jobs": jobs,
-                "review": [entry for entry in playlist['entries'] if entry.get('needs_review')],
-                "unmatched": playlist.get("unmatched", []), "notice": playlist.get("notice", ""),
-                "source_count": playlist.get("source_count", len(jobs))}
+        return {"title": preview["title"], "count": len(jobs), "jobs": jobs}
 
     @app.get("/api/jobs")
     def list_jobs():

@@ -10,6 +10,7 @@ import uuid
 import json
 import unicodedata
 import urllib.request
+import math
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,10 +104,60 @@ def youtube_access_options(cookiefile: Path | None = None) -> dict[str, Any]:
     return {**options, "extractor_args": COOKIE_FREE_YOUTUBE_ARGS if runtime else DESKTOP_YOUTUBE_ARGS}
 
 
-def _music_details(info: dict[str, Any]) -> dict[str, Any]:
-    artist = str(info.get("artist") or info.get("uploader") or "Unknown artist").strip()
+def _clean_metadata_text(value: Any) -> str:
+    return " ".join(unicodedata.normalize("NFKC", str(value or "")).split()).strip()
+
+
+def _release_date(value: Any, year: Any = None) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))
+    if len(digits) >= 8:
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    if len(digits) >= 4:
+        return digits[:4]
+    year_digits = re.sub(r"\D", "", str(year or ""))
+    return year_digits[:4] if len(year_digits) >= 4 else ""
+
+
+def _positive_int(value: Any) -> int | None:
+    try:
+        number = int(str(value).split("/", 1)[0])
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _artwork_url(info: dict[str, Any]) -> str:
+    direct = _clean_metadata_text(info.get("artwork_url") or info.get("thumbnail"))
+    if direct.startswith("https://"):
+        return direct
+    thumbnails = info.get("thumbnails")
+    if isinstance(thumbnails, list):
+        for item in reversed(thumbnails):
+            url = _clean_metadata_text(item.get("url") if isinstance(item, dict) else "")
+            if url.startswith("https://"):
+                return url
+    video_id = _clean_metadata_text(info.get("id") or info.get("video_id"))
+    return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if VIDEO_ID_RE.fullmatch(video_id) else ""
+
+
+def resolve_music_metadata(info: dict[str, Any], source: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Resolve one stable metadata shape for search, previews, files, and storage.
+
+    ``source`` is metadata supplied by an identified music release (for example
+    a Spotify album import), so its non-empty values take priority over the
+    matched video's descriptive fields.
+    """
+    merged = dict(info or {})
+    for key, value in (source or {}).items():
+        if value not in (None, "", [], {}) and value not in ("Unknown artist", "Untitled"):
+            if key == "release_type" and value == "single" and merged.get("album") and not source.get("album"):
+                continue
+            merged[key] = value
+            if key == "title":
+                merged["track"] = value
+    artist = _clean_metadata_text(merged.get("artist") or merged.get("creator") or merged.get("uploader"))
     artist = re.sub(r"\s+-\s+Topic$", "", artist, flags=re.IGNORECASE).strip() or "Unknown artist"
-    title = str(info.get("track") or info.get("title") or "Untitled").strip()
+    title = _clean_metadata_text(merged.get("track") or merged.get("title")) or "Untitled"
     title = re.sub(
         r"^" + re.escape(artist) + r"\s*[-–—:]\s*",
         "",
@@ -114,22 +165,44 @@ def _music_details(info: dict[str, Any]) -> dict[str, Any]:
         count=1,
         flags=re.IGNORECASE,
     ).strip() or title
-    year = info.get("release_year")
-    if not year and info.get("release_date"):
-        year = str(info["release_date"])[:4]
+    title = re.sub(
+        r"\s*[\[(](?:official\s+)?(?:audio|video|music\s+video|lyric\s+video|lyrics)[\])]\s*$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    ).strip() or title
+    album = _clean_metadata_text(merged.get("album"))
+    release_date = _release_date(merged.get("release_date"), merged.get("release_year") or merged.get("year"))
+    duration = merged.get("duration")
     return {
         "title": title,
         "artist": artist,
-        "album": str(info.get("album") or "").strip(),
-        "track_number": info.get("track_number"),
-        "year": str(year).strip() if year else "",
-        "genre": str(info.get("genre") or "").strip(),
+        "album": album,
+        "album_artist": _clean_metadata_text(merged.get("album_artist")) or artist,
+        "artwork_url": _artwork_url(merged),
+        "track_number": _positive_int(merged.get("track_number")),
+        "release_date": release_date,
+        "year": release_date[:4],
+        "genre": _clean_metadata_text(merged.get("genre")),
+        "duration": int(round(duration)) if isinstance(duration, (int, float)) and duration >= 0 else None,
+        "release_id": _clean_metadata_text(merged.get("release_id") or merged.get("album_id")),
+        "release_type": _clean_metadata_text(merged.get("release_type")).lower() or ("album" if album else "single"),
     }
 
 
-def _download_artwork(video_id: str) -> tuple[bytes, str] | None:
+def _music_details(info: dict[str, Any]) -> dict[str, Any]:
+    return resolve_music_metadata(info)
+
+
+def _download_artwork(video_id: str, artwork_url: str = "") -> tuple[bytes, str] | None:
+    parsed = urlparse(artwork_url)
+    trusted_art_hosts = {
+        "i.ytimg.com", "lh3.googleusercontent.com", "i.scdn.co",
+        "image-cdn-ak.spotifycdn.com", "mosaic.scdn.co", "i1.sndcdn.com",
+    }
+    url = artwork_url if parsed.scheme == "https" and parsed.hostname in trusted_art_hosts else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
     request = urllib.request.Request(
-        f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+        url,
         headers={"User-Agent": "Sonkip/2"},
     )
     with urllib.request.urlopen(request, timeout=15) as response:
@@ -140,13 +213,18 @@ def _download_artwork(video_id: str) -> tuple[bytes, str] | None:
     return artwork, content_type
 
 
-def _embed_music_metadata(path: Path, info: dict[str, Any], video_id: str) -> bool:
+def _embed_music_metadata(
+    path: Path,
+    info: dict[str, Any],
+    video_id: str,
+    source_metadata: dict[str, Any] | None = None,
+) -> bool:
     extension = path.suffix.lower()
     if extension not in (".m4a", ".mp4", ".mp3", ".flac", ".opus", ".ogg"):
         return False
-    details = _music_details(info)
+    details = resolve_music_metadata(info, source_metadata)
     try:
-        artwork = _download_artwork(video_id)
+        artwork = _download_artwork(video_id, details["artwork_url"])
     except (OSError, ValueError):
         artwork = None
     if extension in (".m4a", ".mp4"):
@@ -157,7 +235,7 @@ def _embed_music_metadata(path: Path, info: dict[str, Any], video_id: str) -> bo
             audio.add_tags()
         audio.tags["\xa9nam"] = [details["title"]]
         audio.tags["\xa9ART"] = [details["artist"]]
-        audio.tags["aART"] = [details["artist"]]
+        audio.tags["aART"] = [details["album_artist"]]
         if details["album"]:
             audio.tags["\xa9alb"] = [details["album"]]
         if isinstance(details["track_number"], int) and details["track_number"] > 0:
@@ -172,16 +250,17 @@ def _embed_music_metadata(path: Path, info: dict[str, Any], video_id: str) -> bo
             audio.tags["covr"] = [MP4Cover(data, imageformat=image_format)]
         audio.save()
     elif extension == ".mp3":
-        from mutagen.id3 import APIC, TALB, TCON, TDRC, TIT2, TPE1, TRCK
+        from mutagen.id3 import APIC, TALB, TCON, TDRC, TIT2, TPE1, TPE2, TRCK
         from mutagen.mp3 import MP3
 
         audio = MP3(path)
         if audio.tags is None:
             audio.add_tags()
-        for frame in ("TIT2", "TPE1", "TALB", "TRCK", "TDRC", "TCON", "APIC"):
+        for frame in ("TIT2", "TPE1", "TPE2", "TALB", "TRCK", "TDRC", "TCON", "APIC"):
             audio.tags.delall(frame)
         audio.tags.add(TIT2(encoding=3, text=details["title"]))
         audio.tags.add(TPE1(encoding=3, text=details["artist"]))
+        audio.tags.add(TPE2(encoding=3, text=details["album_artist"]))
         if details["album"]:
             audio.tags.add(TALB(encoding=3, text=details["album"]))
         if isinstance(details["track_number"], int) and details["track_number"] > 0:
@@ -201,6 +280,7 @@ def _embed_music_metadata(path: Path, info: dict[str, Any], video_id: str) -> bo
         audio = FLAC(path) if extension == ".flac" else OggOpus(path)
         audio["title"] = [details["title"]]
         audio["artist"] = [details["artist"]]
+        audio["albumartist"] = [details["album_artist"]]
         if details["album"]:
             audio["album"] = [details["album"]]
         if isinstance(details["track_number"], int) and details["track_number"] > 0:
@@ -245,6 +325,63 @@ def get_stream_url(video_id: str, cookiefile: Path | None = None) -> str | None:
         return info.get("url") if isinstance(info, dict) else None
 
 
+def _search_result(item: dict[str, Any]) -> dict[str, Any] | None:
+    video_id = item.get("id") or item.get("video_id")
+    if not isinstance(video_id, str) or not VIDEO_ID_RE.fullmatch(video_id):
+        return None
+    metadata = resolve_music_metadata({**item, "video_id": video_id})
+    return {
+        "video_id": video_id,
+        **metadata,
+        "thumbnail": metadata["artwork_url"],
+        "channel_is_verified": bool(item.get("channel_is_verified")),
+        "view_count": item.get("view_count") if isinstance(item.get("view_count"), int) else None,
+        "source_quality": "official" if (
+            item.get("channel_is_verified")
+            or "topic" in _words(str(item.get("uploader") or item.get("channel") or ""))
+            or "official" in _words(str(item.get("title") or ""))
+        ) else "community",
+    }
+
+
+def _rank_search_results(query: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    query_words = _words(query)
+    version_words = {"live", "cover", "remix", "slowed", "instrumental", "karaoke", "nightcore", "demo", "sped", "acoustic"}
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    for raw in items:
+        result = _search_result(raw)
+        if result is None:
+            continue
+        candidate_words = _words(result["title"] + " " + result["artist"])
+        coverage = len(query_words & candidate_words) / max(1, len(query_words))
+        if coverage < 0.5:
+            continue
+        unwanted_versions = (candidate_words & version_words) - (query_words & version_words)
+        score = coverage * 1.4
+        if result["channel_is_verified"]:
+            score += 0.45
+        if result["source_quality"] == "official":
+            score += 0.35
+        if result["album"]:
+            score += 0.12
+        views = result.get("view_count")
+        if isinstance(views, int) and views > 0:
+            score += min(0.24, math.log10(views + 1) / 28)
+        score -= 0.65 * len(unwanted_versions)
+        ranked.append((score, result))
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    if not ranked:
+        return []
+    top_score = ranked[0][0]
+    margin = top_score - ranked[1][0] if len(ranked) > 1 else top_score
+    clear_match = top_score >= 1.65 and margin >= 0.35
+    selected = ranked[:1] if clear_match else ranked[:5]
+    results = []
+    for index, (score, result) in enumerate(selected):
+        results.append({**result, "is_best_match": index == 0, "match_score": round(score, 3)})
+    return results
+
+
 def search_music(query: str, cookiefile: Path | None = None) -> list[dict[str, Any]]:
     """Search YouTube by song name or direct link; no download occurs here."""
     clean = query.strip()
@@ -267,37 +404,16 @@ def search_music(query: str, cookiefile: Path | None = None) -> list[dict[str, A
             with YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(f"https://www.youtube.com/watch?v={vid}", download=False)
                 if info and isinstance(info, dict):
-                    duration = info.get("duration")
-                    return [{
-                        "video_id": vid,
-                        "title": str(info.get("title") or "Untitled"),
-                        "artist": str(info.get("uploader") or info.get("channel") or "Unknown artist"),
-                        "duration": int(duration) if isinstance(duration, (int, float)) and duration >= 0 else None,
-                        "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
-                    }]
+                    result = _search_result({**info, "id": vid})
+                    return [{**result, "is_best_match": True}] if result else []
         except Exception:
             pass
 
     with YoutubeDL(opts) as ydl:
         data = ydl.extract_info(f"ytsearch15:{clean}", download=False)
 
-    results = []
-    for item in (data or {}).get("entries") or []:
-        if not isinstance(item, dict):
-            continue
-        video_id = item.get("id")
-        if not isinstance(video_id, str) or not VIDEO_ID_RE.fullmatch(video_id):
-            continue
-        duration = item.get("duration")
-        results.append({
-            "video_id": video_id,
-            "title": str(item.get("title") or "Untitled"),
-            "artist": str(item.get("uploader") or item.get("channel") or "Unknown artist"),
-            "duration": int(duration) if isinstance(duration, (int, float)) and duration >= 0 else None,
-            "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-            "channel_is_verified": bool(item.get('channel_is_verified')),
-        })
-    return results
+    entries = [item for item in (data or {}).get("entries") or [] if isinstance(item, dict)]
+    return _rank_search_results(clean, entries)
 
 
 def extract_playlist(url: str, cookiefile: Path | None = None) -> dict[str, Any]:
@@ -329,20 +445,28 @@ def extract_playlist(url: str, cookiefile: Path | None = None) -> dict[str, Any]
         data = ydl.extract_info(clean, download=False)
     entries = []
     seen = set()
-    for item in (data or {}).get("entries") or []:
+    album_release = playlist_id.startswith("OLAK5uy")
+    album_title = _clean_metadata_text((data or {}).get("title")) if album_release else ""
+    album_artist = _clean_metadata_text((data or {}).get("album_artist") or (data or {}).get("artist")) if album_release else ""
+    playlist_art = _artwork_url(data or {})
+    for position, item in enumerate((data or {}).get("entries") or [], 1):
         if not isinstance(item, dict):
             continue
         video_id = item.get("id")
         if isinstance(video_id, str) and VIDEO_ID_RE.fullmatch(video_id) and video_id not in seen:
             seen.add(video_id)
-            entries.append({
-                "video_id": video_id,
-                "title": str(item.get("title") or "Untitled"),
-                "artist": str(item.get("uploader") or item.get("channel") or "Unknown artist"),
-            })
+            release = ({"album": album_title, "release_id": playlist_id, "release_type": "album",
+                        "track_number": item.get("playlist_index") or position,
+                        "album_artist": album_artist,
+                        "artwork_url": playlist_art}
+                       if album_release else {})
+            result = _search_result({**item, **release, "id": video_id})
+            if result:
+                entries.append(result)
     if not entries:
         raise ValueError("No downloadable songs were found in that playlist")
-    return {"title": str((data or {}).get("title") or "Playlist"), "entries": entries}
+    return {"title": str((data or {}).get("title") or "Playlist"), "entries": entries,
+            "artwork_url": playlist_art}
 
 
 def _words(value: str) -> set[str]:
@@ -395,8 +519,18 @@ def _import_playlist(parsed, cookiefile: Path | None) -> dict:
             raise ValueError('Spotify did not expose this playlist. Check that it is public.')
         entity = json.loads(payload[1]).get('props', {}).get('pageProps', {}).get('state', {}).get('data', {}).get('entity', {})
         source, title = 'Spotify', entity.get('name') or 'Spotify playlist'
-        tracks = [{'title': t['title'], 'artist': t['subtitle'], 'duration': t.get('duration', 0) / 1000}
-                  for t in entity.get('trackList', []) if t.get('title') and t.get('subtitle')]
+        release_id = match[2] if match[1] == 'album' else ''
+        collection_artist = _clean_metadata_text(entity.get('subtitle') or entity.get('artist'))
+        tracks = [{
+            'title': t['title'],
+            'artist': t['subtitle'],
+            'album': title if match[1] == 'album' else _clean_metadata_text(t.get('album')),
+            'album_artist': (collection_artist or t['subtitle']) if match[1] == 'album' else '',
+            'duration': t.get('duration', 0) / 1000,
+            'track_number': index,
+            'release_id': release_id,
+            'release_type': 'album' if match[1] == 'album' else '',
+        } for index, t in enumerate(entity.get('trackList', []), 1) if t.get('title') and t.get('subtitle')]
         note = 'Spotify imports the tracks exposed by its public embed; large playlists may be incomplete.'
     else:
         if not re.fullmatch(r'/[\w-]+/sets/[\w-]+/?', parsed.path):
@@ -414,7 +548,9 @@ def _import_playlist(parsed, cookiefile: Path | None) -> dict:
     def match_one(track):
         try:
             found = _match_track(track, cookiefile)
-            return ({**found, 'matched_from': source, 'source_title': track['title']} if found else None,
+            metadata = resolve_music_metadata(found or {}, track)
+            return ({**found, **metadata, 'thumbnail': metadata['artwork_url'],
+                     'matched_from': source, 'source_title': track['title']} if found else None,
                     {**track, 'reason': 'No close YouTube match found'})
         except Exception:
             return None, {**track, 'reason': 'YouTube search failed; try importing again'}
@@ -428,6 +564,26 @@ def _import_playlist(parsed, cookiefile: Path | None) -> dict:
         raise ValueError('No close YouTube matches were found. Try searching for a song by title and artist.')
     return {'title': title, 'entries': entries, 'unmatched': unmatched, 'source_count': len(tracks),
             'source': source, 'notice': note + ' Matches may be different uploads or editions.'}
+
+
+def _same_recording(saved: dict[str, Any], incoming: dict[str, Any]) -> bool:
+    if not incoming or incoming.get("title") in (None, "", "Untitled"):
+        return False
+    left = resolve_music_metadata(saved)
+    right = resolve_music_metadata(incoming)
+    if left["release_id"] and right["release_id"]:
+        if left["release_id"].casefold() != right["release_id"].casefold():
+            return False
+        if left["track_number"] is not None and right["track_number"] is not None:
+            return left["track_number"] == right["track_number"]
+        return (left["title"].casefold() == right["title"].casefold()
+                and left["artist"].casefold() == right["artist"].casefold())
+    text_matches = all(left[key].casefold() == right[key].casefold() for key in ("title", "artist", "album"))
+    if not text_matches or not left["album"]:
+        return False
+    if left["duration"] is not None and right["duration"] is not None:
+        return abs(left["duration"] - right["duration"]) <= 3
+    return left["track_number"] is not None and left["track_number"] == right["track_number"]
 
 
 class DownloadManager:
@@ -477,6 +633,7 @@ class DownloadManager:
         video_id: str,
         audio_format: str = "original",
         embed_metadata: bool = True,
+        source_metadata: dict[str, Any] | None = None,
     ):
         if not VIDEO_ID_RE.fullmatch(video_id):
             raise ValueError("Invalid video ID")
@@ -485,7 +642,7 @@ class DownloadManager:
         with self.lock:
             expected_extension = audio_format if audio_format != "original" else None
             saved = next((track for track in self.store.list_tracks()
-                          if track['video_id'] == video_id
+                          if (track['video_id'] == video_id or _same_recording(track, source_metadata or {}))
                           and (expected_extension is None or track['extension'] == expected_extension)), None)
             if saved:
                 job_id = saved['id']
@@ -495,6 +652,7 @@ class DownloadManager:
                     'created_at': datetime.now(timezone.utc).isoformat(), 'already_saved': True,
                     'title': saved['title'], 'artist': saved['artist'], 'audio_format': audio_format,
                     'embed_metadata': bool(embed_metadata),
+                    'source_metadata': resolve_music_metadata(source_metadata or saved),
                 }
                 self.store.save_job(self.jobs[job_id])
                 return job_id
@@ -523,11 +681,12 @@ class DownloadManager:
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "audio_format": audio_format,
                 "embed_metadata": bool(embed_metadata),
+                "source_metadata": dict(source_metadata or {}),
             }
             self.store.save_job(self.jobs[job_id])
             self.cancellations[job_id] = threading.Event()
             self.futures[job_id] = self.pool.submit(
-                self._run, job_id, video_id, audio_format, bool(embed_metadata)
+                self._run, job_id, video_id, audio_format, bool(embed_metadata), source_metadata
             )
         return job_id
 
@@ -553,6 +712,7 @@ class DownloadManager:
                         job['video_id'],
                         job.get('audio_format', 'original'),
                         job.get('embed_metadata', True),
+                        job.get('source_metadata'),
                     ))
                 except ValueError:
                     # A cancelled worker may still be returning from a network call.
@@ -564,6 +724,7 @@ class DownloadManager:
                     job['video_id'],
                     job.get('audio_format', 'original'),
                     job.get('embed_metadata', True),
+                    job.get('source_metadata'),
                 ) for job in self.list_jobs()
                 if job.get('interrupted') and not job.get('cancelled') and job['status'] == 'error']
 
@@ -573,6 +734,7 @@ class DownloadManager:
         video_id: str,
         audio_format: str = "original",
         embed_metadata: bool = True,
+        source_metadata: dict[str, Any] | None = None,
     ):
         cancelled = self.cancellations[job_id]
         if cancelled.is_set():
@@ -676,7 +838,7 @@ class DownloadManager:
             metadata_embedded = False
             if embed_metadata:
                 try:
-                    metadata_embedded = _embed_music_metadata(path, info, video_id)
+                    metadata_embedded = _embed_music_metadata(path, info, video_id, source_metadata)
                 except Exception:
                     # Music details are an enhancement; a playable download should
                     # remain available if artwork or a malformed source tag fails.
@@ -684,12 +846,20 @@ class DownloadManager:
             selected = (info.get("requested_downloads") or [{}])[0]
             codec = audio_format if audio_format in CONVERTED_AUDIO_FORMATS else selected.get("acodec") or info.get("acodec")
             abr = selected.get("abr") or info.get("abr")
+            details = resolve_music_metadata(info, source_metadata)
             track = {
                 "id": job_id,
                 "video_id": video_id,
-                "title": str(info.get("track") or info.get("title") or "Untitled"),
-                "artist": str(info.get("artist") or info.get("uploader") or "Unknown artist"),
-                "duration": info.get("duration"),
+                "title": details["title"],
+                "artist": details["artist"],
+                "album": details["album"],
+                "album_artist": details["album_artist"],
+                "artwork_url": details["artwork_url"],
+                "track_number": details["track_number"],
+                "release_date": details["release_date"],
+                "release_id": details["release_id"],
+                "release_type": details["release_type"],
+                "duration": details["duration"],
                 "filename": path.name,
                 "bytes": path.stat().st_size,
                 "extension": path.suffix.lstrip(".").lower(),

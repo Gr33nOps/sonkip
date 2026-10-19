@@ -20,6 +20,7 @@
     toastTimeout: null,
     pollInterval: null,
     playlist: null,
+    playlistSelected: new Set(),
     authConnected: false,
     audioFormat: ["original", "mp3", "m4a", "opus", "flac"].includes(
       localStorage.getItem("sonkip-audio-format"),
@@ -102,9 +103,9 @@
 
   function filteredLibrary() {
     const query = state.libraryQuery.toLocaleLowerCase().trim();
-    const songs = state.library.filter(track => `${track.title} ${track.artist}`.toLocaleLowerCase().includes(query));
+    const songs = state.library.filter(track => `${track.title} ${track.artist} ${track.album || ""} ${track.album_artist || ""}`.toLocaleLowerCase().includes(query));
     if (state.librarySort === "oldest") songs.reverse();
-    else if (["title", "artist"].includes(state.librarySort)) songs.sort((a,b) => String(a[state.librarySort]).localeCompare(String(b[state.librarySort])));
+    else if (["title", "artist", "album"].includes(state.librarySort)) songs.sort((a,b) => String(a[state.librarySort] || "").localeCompare(String(b[state.librarySort] || "")));
     return songs;
   }
 
@@ -200,16 +201,16 @@
 
     if (isLocal) {
       dlHtml = `
-        <button class="track-download-btn downloaded" data-save-local="${safe(track.id)}" title="Download file to device">
+        <button class="track-download-btn downloaded" data-save-local="${safe(track.id)}" aria-label="Download ${safe(track.title)} to this device" title="Download file to device">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 21h16"/></svg>
           <span class="hidden sm:inline">DOWNLOAD</span>
         </button>
-        <button class="track-delete-btn" data-delete-track="${safe(track.id)}" title="Delete from library">×</button>
+        <button class="track-delete-btn" data-delete-track="${safe(track.id)}" aria-label="Delete ${safe(track.title)} from library" title="Delete from library">×</button>
       `;
     } else if (job && job.status !== "complete" && job.status !== "error") {
       const pct = job.percent ? `${Math.round(job.percent)}%` : "...";
       dlHtml = `
-        <button class="track-download-btn" disabled>
+        <button class="track-download-btn" aria-label="Downloading ${safe(track.title)} ${safe(pct)}" disabled>
           <span class="spinner"></span>
           <span class="hidden sm:inline">DOWNLOADING ${pct}</span>
         </button>
@@ -220,14 +221,14 @@
         (t) => t.video_id === track.video_id,
       );
       dlHtml = `
-        <button class="track-download-btn downloaded" data-save-local="${safe(localItem ? localItem.id : "")}" title="Saved in library. Click to save file again">
+        <button class="track-download-btn downloaded" data-save-local="${safe(localItem ? localItem.id : "")}" aria-label="Download ${safe(track.title)} to this device" title="Saved in library. Click to save file again">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 21h16"/></svg>
           <span class="hidden sm:inline">DOWNLOADED ✓</span>
         </button>
       `;
     } else {
       dlHtml = `
-        <button class="track-download-btn" data-download-track="${safe(track.video_id || "")}" data-track-title="${safe(track.title)}" data-track-artist="${safe(track.artist)}">
+        <button class="track-download-btn" data-download-track="${safe(track.video_id || "")}" data-track-title="${safe(track.title)}" data-track-artist="${safe(track.artist)}" aria-label="Download ${safe(track.title)}">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 21h16"/></svg>
           <span class="hidden sm:inline">DOWNLOAD</span>
         </button>
@@ -245,6 +246,7 @@
     return `
       <article class="track-item" data-vid="${safe(track.video_id || "")}" data-tid="${safe(track.id || "")}">
         ${selectionHtml}
+        ${selectionHtml ? "" : (track.thumbnail || track.artwork_url ? `<img class="track-artwork" src="${safe(track.thumbnail || track.artwork_url)}" alt="" width="56" height="56" loading="lazy" />` : `<span class="track-artwork artwork-placeholder" aria-hidden="true">♪</span>`)}
         <button
           class="${playClass}"
           data-play-track="${safe((isLocal ? track.id : track.video_id) || "")}"
@@ -258,6 +260,8 @@
         <div class="track-info">
           <h2 class="track-title">${safe(track.title)}</h2>
           <p class="track-artist">${safe(track.artist)}${tagHtml}</p>
+          ${track.album || track.duration != null || track.year ? `<p class="track-metadata">${[track.album, track.year, track.duration != null ? formatTime(track.duration) : ""].filter(Boolean).map(safe).join(" · ")}</p>` : ""}
+          ${track.is_best_match && !isLocal ? `<span class="best-match">BEST MATCH</span>` : ""}
           ${track.needs_review ? `<p class="track-error">Check this match before downloading. The version or duration is uncertain.</p>` : ""}
           ${job?.status === "error" ? `<p class="track-error">${safe(job.error || "Download failed")}. Use the download button to retry.</p>` : ""}
         </div>
@@ -305,15 +309,32 @@
     const playlistMode = mode === "playlist";
     $("mode-song").classList.toggle("active", !playlistMode);
     $("mode-playlist").classList.toggle("active", playlistMode);
-    $("mode-song").setAttribute("aria-selected", String(!playlistMode));
-    $("mode-playlist").setAttribute("aria-selected", String(playlistMode));
+    $("mode-song").setAttribute("aria-pressed", String(!playlistMode));
+    $("mode-playlist").setAttribute("aria-pressed", String(playlistMode));
     $("search-input").placeholder = playlistMode
-      ? "PASTE A PLAYLIST LINK"
-      : "TYPE A SONG OR ARTIST";
+      ? "PASTE A PLAYLIST LINK…"
+      : "TYPE A SONG, ARTIST, OR ALBUM…";
     $("input-hint").textContent = playlistMode
       ? "YOUTUBE, SPOTIFY, OR SOUNDCLOUD · AUDIO MATCHED ON YOUTUBE"
       : "SEARCH BY TITLE, ARTIST, ALBUM, OR VIDEO LINK";
     $("search-input").focus();
+  }
+
+  function renderPlaylistPreview() {
+    const preview = $("playlist-preview");
+    if (!preview || !state.playlist?.entries) return;
+    preview.hidden = false;
+    preview.innerHTML = state.playlist.entries.map((track) => {
+      const artwork = track.thumbnail || track.artwork_url;
+      return `
+        <label class="playlist-track">
+          <input type="checkbox" data-playlist-track="${safe(track.video_id)}" ${state.playlistSelected.has(track.video_id) ? "checked" : ""} />
+          ${artwork ? `<img src="${safe(artwork)}" alt="" width="48" height="48" loading="lazy" />` : `<span class="playlist-artwork-placeholder artwork-placeholder" aria-hidden="true">♪</span>`}
+          <span><strong>${safe(track.title)}</strong><small>${safe(track.artist)}${track.album ? ` · ${safe(track.album)}` : ""}${track.duration != null ? ` · ${formatTime(track.duration)}` : ""}</small></span>
+        </label>`;
+    }).join("");
+    $("playlist-selection-count").textContent = `${state.playlistSelected.size} selected`;
+    $("playlist-save").disabled = state.playlistSelected.size === 0;
   }
 
   async function startPlaylist(url) {
@@ -321,46 +342,73 @@
     if (!url) return;
     const panel = $("playlist-progress");
     panel.hidden = false;
+    state.playlist = null;
+    state.playlistSelected.clear();
+    $("playlist-preview").hidden = true;
+    const previewActions = $("playlist-preview-actions");
+    if (previewActions) previewActions.hidden = true;
     $("playlist-title").textContent = "Reading playlist and finding YouTube matches…";
     $("playlist-count").textContent = "—";
     $("playlist-meter-fill").style.width = "8%";
     try {
       const data = await api("/api/playlists", {
         method: "POST",
-        body: JSON.stringify({
-          url,
-          audio_format: state.audioFormat,
-          embed_metadata: state.embedMetadata,
-        }),
+        body: JSON.stringify({ url }),
       });
       state.playlist = {
+        previewId: data.preview_id,
         title: data.title,
-        total: data.count,
+        entries: data.entries || [],
+        total: 0,
         complete: 0,
         failed: 0,
       };
-      state.currentTab = "search";
-      state.query = url;
-      state.results = [...(data.review || []), ...data.jobs];
-      $("playlist-title").textContent = data.title + (data.notice ? ` · ${data.count} matched / ${data.source_count} listed. ${data.unmatched.length} skipped. ${data.notice}` : "");
-      $("playlist-count").textContent = `0 / ${data.count}`;
-      $("playlist-meter-fill").style.width = "12%";
-      showToast(`${data.count} songs queued from ${data.title}`);
-      if (data.review?.length) $("playlist-title").textContent += ` · ${data.review.length} uncertain matches below — review before downloading`;
-      for (const item of data.jobs) {
-        state.activeJobs.set(item.video_id, {
-          video_id: item.video_id,
-          status: "queued",
-          percent: 0,
-          title: item.title,
-        });
-        pollJob(item.job_id, item.video_id, item.title, true);
-      }
-      render();
+      state.playlistSelected = new Set(state.playlist.entries.map((entry) => entry.video_id));
+      if (previewActions) previewActions.hidden = false;
+      $("playlist-title").textContent = data.title + (data.notice ? ` · ${data.notice}` : "");
+      $("playlist-count").textContent = `${data.count} tracks · ${state.playlistSelected.size} selected`;
+      $("playlist-meter-fill").style.width = "0%";
+      renderPlaylistPreview();
+      showToast(`Review ${data.count} tracks, then press Save`);
     } catch (err) {
       $("playlist-title").textContent = "Playlist could not be loaded";
       $("playlist-count").textContent = err.message;
       $("playlist-meter-fill").style.width = "0%";
+      showToast(err.message, true);
+    }
+  }
+
+  async function savePlaylistSelection() {
+    if (!state.playlist || state.playlistSelected.size === 0) return;
+    $("playlist-save").disabled = true;
+    try {
+      const data = await api("/api/playlists/download", {
+        method: "POST",
+        body: JSON.stringify({
+          preview_id: state.playlist.previewId,
+          video_ids: Array.from(state.playlistSelected),
+          audio_format: state.audioFormat,
+          embed_metadata: state.embedMetadata,
+        }),
+      });
+      state.playlist.total = data.count;
+      state.playlist.complete = 0;
+      state.playlist.failed = 0;
+      state.currentTab = "search";
+      state.query = data.title;
+      state.results = data.jobs;
+      $("playlist-preview").hidden = true;
+      $("playlist-preview-actions").hidden = true;
+      $("playlist-count").textContent = `0 / ${data.count}`;
+      $("playlist-meter-fill").style.width = "8%";
+      for (const item of data.jobs) {
+        state.activeJobs.set(item.video_id, {video_id: item.video_id, status: "queued", percent: 0, title: item.title});
+        pollJob(item.job_id, item.video_id, item.title, true);
+      }
+      render();
+      showToast(`${data.count} selected songs queued from ${data.title}`);
+    } catch (err) {
+      $("playlist-save").disabled = false;
       showToast(err.message, true);
     }
   }
@@ -400,12 +448,14 @@
     render();
 
     try {
+      const source = (state.results || []).find((track) => track.video_id === videoId);
       const res = await api("/api/downloads", {
         method: "POST",
         body: JSON.stringify({
           video_id: videoId,
           audio_format: state.audioFormat,
           embed_metadata: state.embedMetadata,
+          ...(source ? {metadata: source} : {}),
         }),
       });
       const jobId = res.job_id;
@@ -721,6 +771,22 @@
 
   $("mode-song").addEventListener("click", () => setInputMode("song"));
   $("mode-playlist").addEventListener("click", () => setInputMode("playlist"));
+  $("playlist-select-all").addEventListener("click", () => {
+    state.playlistSelected = new Set((state.playlist?.entries || []).map((entry) => entry.video_id));
+    renderPlaylistPreview();
+  });
+  $("playlist-deselect-all").addEventListener("click", () => {
+    state.playlistSelected.clear();
+    renderPlaylistPreview();
+  });
+  $("playlist-preview").addEventListener("change", (event) => {
+    const videoId = event.target.dataset.playlistTrack;
+    if (!videoId) return;
+    if (event.target.checked) state.playlistSelected.add(videoId);
+    else state.playlistSelected.delete(videoId);
+    renderPlaylistPreview();
+  });
+  $("playlist-save").addEventListener("click", savePlaylistSelection);
   $("audio-format").value = state.audioFormat;
   $("audio-format").addEventListener("change", (event) => {
     state.audioFormat = event.target.value;

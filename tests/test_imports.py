@@ -72,3 +72,83 @@ def test_matching_flags_missing_duration_for_review(monkeypatch):
     ])
     result = engine._match_track({'title':'Let It Happen','artist':'Tame Impala','duration':468}, None)
     assert result.get('needs_review') is True
+
+
+def test_search_ranking_prefers_official_exact_match_and_hides_weak_results():
+    items = [
+        {'id': 'abcdefghijk', 'title': 'Song cover', 'uploader': 'Small channel', 'duration': 200, 'view_count': 100},
+        {'id': 'NMRhx71bGo4', 'title': 'Artist - Song (Official Audio)', 'uploader': 'Artist - Topic',
+         'duration': 201, 'view_count': 500000, 'channel_is_verified': True, 'album': 'Real Album'},
+        {'id': 'M7lc1UVf-VE', 'title': 'Unrelated upload', 'uploader': 'Archive', 'duration': 120, 'view_count': 20},
+    ]
+    results = engine._rank_search_results('Artist Song', items)
+    assert [item['video_id'] for item in results] == ['NMRhx71bGo4']
+    assert results[0]['album'] == 'Real Album'
+    assert results[0]['is_best_match'] is True
+
+
+def test_metadata_normalization_keeps_release_identity_consistent_without_inventing_album():
+    first = engine.resolve_music_metadata({
+        'track': '  First\u00a0Song ', 'artist': 'Artist - Topic', 'album': '  Night   Drive ',
+        'album_artist': 'Artist', 'track_number': '1', 'release_date': '20261002',
+        'duration': 200.8, 'release_id': ' release-1 ',
+    })
+    second = engine.resolve_music_metadata({
+        'track': 'Second Song', 'artist': 'Artist', 'album': 'Night Drive',
+        'album_artist': 'Artist', 'track_number': 2, 'release_date': '2026-10-02',
+        'duration': 204,
+    }, {'release_id': 'release-1'})
+    single = engine.resolve_music_metadata({'track': 'Standalone', 'artist': 'Artist'})
+    official = engine.resolve_music_metadata({'title': 'Artist - Song (Official Audio)', 'artist': 'Artist - Topic'})
+    assert first['album'] == second['album'] == 'Night Drive'
+    assert first['artist'] == second['artist'] == 'Artist'
+    assert first['release_id'] == second['release_id'] == 'release-1'
+    assert first['track_number'] == 1
+    assert first['release_date'] == '2026-10-02'
+    assert single['album'] == ''
+    assert single['release_type'] == 'single'
+    assert official['title'] == 'Song'
+
+
+def test_youtube_music_album_tracks_share_one_release(monkeypatch):
+    class Extractor:
+        def __init__(self, _opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def extract_info(self, _url, download):
+            assert download is False
+            return {'title': 'Night Drive', 'album_artist': 'Artist', 'thumbnail': 'https://i.ytimg.com/vi/albumcover/hqdefault.jpg', 'entries': [
+                {'id': 'abcdefghijk', 'title': 'First', 'artist': 'Artist', 'playlist_index': 1, 'thumbnail': 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg'},
+                {'id': 'NMRhx71bGo4', 'title': 'Second', 'artist': 'Artist feat. Guest', 'playlist_index': 2, 'thumbnail': 'https://i.ytimg.com/vi/NMRhx71bGo4/hqdefault.jpg'},
+            ]}
+    monkeypatch.setattr(engine, 'YoutubeDL', Extractor)
+    result = engine.extract_playlist('https://music.youtube.com/playlist?list=OLAK5uy_release123')
+    assert {track['album'] for track in result['entries']} == {'Night Drive'}
+    assert {track['release_id'] for track in result['entries']} == {'OLAK5uy_release123'}
+    assert [track['track_number'] for track in result['entries']] == [1, 2]
+    assert {track['artwork_url'] for track in result['entries']} == {'https://i.ytimg.com/vi/albumcover/hqdefault.jpg'}
+    assert {track['album_artist'] for track in result['entries']} == {'Artist'}
+
+
+def test_youtube_music_album_assigns_track_order_when_provider_omits_playlist_index(monkeypatch):
+    class Extractor:
+        def __init__(self, _opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def extract_info(self, _url, download):
+            assert download is False
+            return {'title': 'Album', 'artist': 'Artist', 'entries': [
+                {'id': 'abcdefghijk', 'title': 'First', 'artist': 'Artist'},
+                {'id': 'NMRhx71bGo4', 'title': 'Second', 'artist': 'Artist'},
+            ]}
+    monkeypatch.setattr(engine, 'YoutubeDL', Extractor)
+
+    result = engine.extract_playlist('https://music.youtube.com/playlist?list=OLAK5uy_release123')
+
+    assert [track['track_number'] for track in result['entries']] == [1, 2]
+
+
+def test_release_deduplication_does_not_merge_different_tracks_without_numbers():
+    saved = {'title': 'First', 'artist': 'Artist', 'album': 'Album', 'release_id': 'release-1'}
+    incoming = {'title': 'Second', 'artist': 'Artist', 'album': 'Album', 'release_id': 'release-1'}
+    assert engine._same_recording(saved, incoming) is False

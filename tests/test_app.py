@@ -1,5 +1,6 @@
 """Offline API integration tests with a fake extractor; no real videos downloaded."""
 import importlib.util
+from html.parser import HTMLParser
 import json
 import sys
 import time
@@ -23,7 +24,37 @@ from app.main import create_app
 VIDEO_ID = "dQw4w9WgXcQ"
 
 
-def test_uncertain_playlist_matches_wait_for_user_review(tmp_path, monkeypatch):
+class _HomepageSemantics(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.elements = []
+
+    def handle_starttag(self, tag, attrs):
+        self.elements.append((tag, dict(attrs)))
+
+
+def test_homepage_exposes_navigation_and_live_status_semantics(tmp_path):
+    with TestClient(create_app(tmp_path), base_url="http://localhost") as client:
+        response = client.get("/")
+    assert response.status_code == 200
+    parser = _HomepageSemantics()
+    parser.feed(response.text)
+    assert ("a", {"class": "skip-link", "href": "#main-content"}) in parser.elements
+    assert any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.elements)
+    assert any(
+        attrs.get("id") == "status-message"
+        and attrs.get("role") == "status"
+        and attrs.get("aria-live") == "polite"
+        for _, attrs in parser.elements
+    )
+    assert any(
+        attrs.get("class") == "mode-switch"
+        and attrs.get("role") == "group"
+        for _, attrs in parser.elements
+    )
+
+
+def test_playlist_preview_never_starts_downloads(tmp_path, monkeypatch):
     import app.main as main
     monkeypatch.setattr(engine.DownloadManager, '_run', lambda *a: None)
     monkeypatch.setattr(main, 'extract_playlist', lambda *a: {
@@ -31,9 +62,56 @@ def test_uncertain_playlist_matches_wait_for_user_review(tmp_path, monkeypatch):
     })
     with TestClient(create_app(tmp_path), base_url='http://localhost') as client:
         result=client.post('/api/playlists',json={'url':'https://open.spotify.com/playlist/example'}).json()
-        assert result['count'] == 0
-        assert result['review'][0]['video_id'] == VIDEO_ID
+        assert result['count'] == 1
+        assert result['entries'][0]['video_id'] == VIDEO_ID
+        assert result['entries'][0]['selected'] is True
         assert client.get('/api/jobs').json()['jobs'] == []
+
+
+def test_playlist_download_starts_only_the_confirmed_selection(tmp_path, monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(engine.DownloadManager, '_run', lambda *a: None)
+    monkeypatch.setattr(main, 'extract_playlist', lambda *a: {
+        'title': 'Album',
+        'entries': [
+            {'video_id': VIDEO_ID, 'title': 'First', 'artist': 'Artist', 'album': 'Album'},
+            {'video_id': 'M7lc1UVf-VE', 'title': 'Second', 'artist': 'Artist', 'album': 'Album'},
+        ],
+    })
+    with TestClient(create_app(tmp_path), base_url='http://localhost') as client:
+        preview = client.post('/api/playlists', json={'url': 'https://music.youtube.com/playlist?list=PLroadtrip'}).json()
+        response = client.post('/api/playlists/download', json={
+            'preview_id': preview['preview_id'],
+            'video_ids': ['M7lc1UVf-VE'],
+            'audio_format': 'flac',
+            'embed_metadata': True,
+        })
+        assert response.status_code == 202
+        assert [job['video_id'] for job in response.json()['jobs']] == ['M7lc1UVf-VE']
+        jobs = client.get('/api/jobs').json()['jobs']
+        assert len(jobs) == 1
+        assert jobs[0]['source_metadata']['album'] == 'Album'
+
+
+def test_same_release_track_is_not_downloaded_again_from_another_upload(tmp_path, monkeypatch):
+    app = create_app(tmp_path)
+    manager = app.state.manager
+    source = manager.store.tracks_dir / ('a' * 32 + '.m4a')
+    source.write_bytes(b'audio')
+    manager.store.add_track({
+        'id': 'a' * 32, 'video_id': VIDEO_ID, 'title': 'First', 'artist': 'Artist',
+        'album': 'Album', 'album_artist': 'Artist', 'release_id': 'release-1',
+        'track_number': 1, 'duration': 180, 'filename': source.name,
+        'bytes': 5, 'extension': 'm4a', 'codec': 'aac', 'abr': 128,
+    })
+    monkeypatch.setattr(manager, '_run', lambda *args: (_ for _ in ()).throw(AssertionError('download started')))
+    job_id = manager.start('M7lc1UVf-VE', 'm4a', True, {
+        'title': 'First', 'artist': 'Artist', 'album': 'Album',
+        'release_id': 'release-1', 'track_number': 1, 'duration': 180,
+    })
+    assert job_id == 'a' * 32
+    assert manager.get_job(job_id)['already_saved'] is True
+    manager.pool.shutdown(wait=True)
 
 
 class FakeYoutubeDL:
@@ -100,7 +178,7 @@ def test_end_to_end_local_download(monkeypatch, tmp_path):
         assert client.get("/static/style.css").status_code == 200
         assert client.get("/api/health").json()["ok"] is True
         assert client.get("/api/search", params={"q": "a"}).status_code == 422
-        results = client.get("/api/search", params={"q": "test music"}).json()["results"]
+        results = client.get("/api/search", params={"q": "Sample Audio"}).json()["results"]
         assert len(results) == 1
         assert results[0]["title"] == "Sample <Audio>"
         assert client.post("/api/downloads", json={"video_id": "not-valid"}).status_code == 422
@@ -223,8 +301,12 @@ def test_playlist_applies_format_and_metadata_preference_to_every_job(monkeypatc
         ],
     })
     with TestClient(create_app(tmp_path), base_url="http://localhost") as client:
-        response = client.post("/api/playlists", json={
+        preview = client.post("/api/playlists", json={
             "url": "https://music.youtube.com/playlist?list=PLroadtrip",
+        }).json()
+        response = client.post("/api/playlists/download", json={
+            "preview_id": preview["preview_id"],
+            "video_ids": [VIDEO_ID, "M7lc1UVf-VE"],
             "audio_format": "flac",
             "embed_metadata": False,
         })
@@ -273,6 +355,13 @@ def test_playlist_import_queues_every_valid_song(monkeypatch, tmp_path):
     app = create_app(tmp_path)
     with TestClient(app, base_url="http://localhost") as client:
         playlist = client.post("/api/playlists", json={"url": "https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=PLroadtrip"})
+        assert playlist.status_code == 200
+        preview = playlist.json()
+        assert client.get("/api/jobs").json()["jobs"] == []
+        playlist = client.post("/api/playlists/download", json={
+            "preview_id": preview["preview_id"],
+            "video_ids": [VIDEO_ID, "M7lc1UVf-VE"],
+        })
         assert playlist.status_code == 202
         payload = playlist.json()
         assert payload["title"] == "Road trip"

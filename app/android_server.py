@@ -4,13 +4,14 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
+import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .engine import DownloadManager, VIDEO_ID_RE, extract_playlist, get_stream_url, search_music
+from .engine import DownloadManager, VIDEO_ID_RE, extract_playlist, get_stream_url, search_music, resolve_music_metadata
 from .storage import MusicStore
 
 TRACK_ROUTE = re.compile(r"^/api/tracks/([0-9a-f]{32})/(audio|file)$")
@@ -25,6 +26,7 @@ class AndroidServer(ThreadingHTTPServer):
         super().__init__(address, handler)
         self.store = store
         self.manager = DownloadManager(store)
+        self.playlist_previews: dict[str, dict[str, Any]] = {}
         self.static_dir = static_dir.resolve()
 
 
@@ -231,6 +233,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                     str(body.get("video_id", "")),
                     str(body.get("audio_format", "m4a")),
                     body.get("embed_metadata", True) is not False,
+                    body.get("metadata") if isinstance(body.get("metadata"), dict) else None,
                 )
             except ValueError as exc:
                 self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": str(exc)})
@@ -249,22 +252,18 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/playlists":
             try:
-                audio_format = str(body.get("audio_format", "m4a"))
-                embed_metadata = body.get("embed_metadata", True) is not False
                 playlist = extract_playlist(
                     str(body.get("url", "")),
                     self.server.store.youtube_cookies_path,
                 )
-                jobs = [
-                    {
-                        **entry,
-                        "job_id": self.server.manager.start(
-                            entry["video_id"], audio_format, embed_metadata
-                        ),
-                    }
-                    for entry in playlist["entries"]
-                    if not entry.get('needs_review')
-                ]
+                entries = []
+                for item in playlist["entries"]:
+                    metadata = resolve_music_metadata(item)
+                    entries.append({**item, **metadata, "thumbnail": metadata["artwork_url"], "selected": True})
+                preview_id = uuid.uuid4().hex
+                self.server.playlist_previews[preview_id] = {"title": playlist["title"], "entries": entries}
+                while len(self.server.playlist_previews) > 20:
+                    self.server.playlist_previews.pop(next(iter(self.server.playlist_previews)))
             except ValueError as exc:
                 self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": str(exc)})
             except RuntimeError as exc:
@@ -273,12 +272,39 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.BAD_GATEWAY, {"detail": f"Playlist provider unavailable: {str(exc)[:220]}"})
             else:
                 self._json(
-                    HTTPStatus.ACCEPTED,
-                    {"title": playlist["title"], "count": len(jobs), "jobs": jobs,
-                     "review": [entry for entry in playlist['entries'] if entry.get('needs_review')],
+                    HTTPStatus.OK,
+                    {"preview_id": preview_id, "title": playlist["title"], "count": len(entries), "entries": entries,
                      "unmatched": playlist.get("unmatched", []), "notice": playlist.get("notice", ""),
-                     "source_count": playlist.get("source_count", len(jobs))},
+                     "source_count": playlist.get("source_count", len(entries)),
+                     "artwork_url": playlist.get("artwork_url", "")},
                 )
+            return
+        if path == "/api/playlists/download":
+            preview = self.server.playlist_previews.get(str(body.get("preview_id", "")))
+            video_ids = body.get("video_ids")
+            if preview is None:
+                self._json(HTTPStatus.NOT_FOUND, {"detail": "This playlist preview expired. Load it again."})
+                return
+            if (not isinstance(video_ids, list) or not video_ids or len(video_ids) > 1000
+                    or any(not isinstance(value, str) or not VIDEO_ID_RE.fullmatch(value) for value in video_ids)):
+                self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": "Choose at least one valid song"})
+                return
+            requested = set(video_ids)
+            entries = [entry for entry in preview["entries"] if entry["video_id"] in requested]
+            if len(entries) != len(requested):
+                self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": "The selection does not belong to this playlist preview"})
+                return
+            try:
+                jobs = [{**entry, "job_id": self.server.manager.start(
+                    entry["video_id"], str(body.get("audio_format", "m4a")),
+                    body.get("embed_metadata", True) is not False, entry
+                )} for entry in entries]
+            except ValueError as exc:
+                self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"detail": str(exc)})
+            except RuntimeError as exc:
+                self._json(HTTPStatus.TOO_MANY_REQUESTS, {"detail": str(exc)})
+            else:
+                self._json(HTTPStatus.ACCEPTED, {"title": preview["title"], "count": len(jobs), "jobs": jobs})
             return
         if path == "/api/tracks/delete-selected":
             track_ids = body.get("track_ids")

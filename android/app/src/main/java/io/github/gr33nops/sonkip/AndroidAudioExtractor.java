@@ -55,7 +55,8 @@ public final class AndroidAudioExtractor {
                 if ((sourceFlags & MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
                     codecFlags |= MediaCodec.BUFFER_FLAG_KEY_FRAME;
                 }
-                if ((sourceFlags & MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME) != 0) {
+                if (android.os.Build.VERSION.SDK_INT >= 26
+                        && (sourceFlags & MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME) != 0) {
                     codecFlags |= MediaCodec.BUFFER_FLAG_PARTIAL_FRAME;
                 }
                 info.set(0, size, extractor.getSampleTime(), codecFlags);

@@ -7,6 +7,8 @@ __pycache__/
 *.part
 *.ytdl
 .DS_Store
+*.apk
+/.gradle-release-audit*/
 
 .vercel
 android/.gradle/

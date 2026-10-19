@@ -21,6 +21,7 @@
     <script src="./static/app.js" defer></script>
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <div class="noise" aria-hidden="true"></div>
     <header class="site-header">
       <button
@@ -46,7 +47,7 @@
         </button>
       </div>
     </header>
-    <main>
+    <main id="main-content">
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy-block">
           <p class="eyebrow">
@@ -82,23 +83,21 @@
           </div>
           <p>Paste a link or search by name.</p>
         </div>
-        <div class="mode-switch" role="tablist" aria-label="Download type">
+        <div class="mode-switch" role="group" aria-label="Download type">
           <button
             id="mode-song"
             class="mode-btn active"
             type="button"
-            role="tab"
-            aria-selected="true"
+            aria-pressed="true"
           >
             Song / search</button
           ><button
             id="mode-playlist"
             class="mode-btn"
             type="button"
-            role="tab"
-            aria-selected="false"
+            aria-pressed="false"
           >
-            Full playlist
+            Playlist / album
           </button>
         </div>
         <div class="audio-format-picker">
@@ -123,8 +122,9 @@
           <label class="search-box"
             ><input
               id="search-input"
+              name="q"
               class="search-input"
-              placeholder="SONG, ARTIST, OR LINK"
+              placeholder="SONG, ARTIST, ALBUM, OR LINK…"
               aria-label="Search music"
               autocomplete="off"
               spellcheck="false"
@@ -160,10 +160,17 @@
           </div>
           <div class="playlist-meter"><i id="playlist-meter-fill"></i></div>
           <span id="playlist-count">0 / 0</span>
+          <div id="playlist-preview-actions" class="playlist-preview-actions" hidden>
+            <button id="playlist-select-all" type="button">Select all</button>
+            <button id="playlist-deselect-all" type="button">Deselect all</button>
+            <span id="playlist-selection-count">0 selected</span>
+            <button id="playlist-save" class="playlist-save" type="button">Save selected</button>
+          </div>
+          <div id="playlist-preview" class="playlist-preview" hidden></div>
         </div>
         <div id="library-tools" class="library-tools" hidden>
-          <input id="library-query" type="search" placeholder="Search saved songs or artists" aria-label="Search your library" />
-          <select id="library-sort" aria-label="Sort library"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Song title</option><option value="artist">Artist</option></select>
+          <input id="library-query" name="library-query" type="search" placeholder="Search saved songs, artists, or albums…" aria-label="Search your library" autocomplete="off" spellcheck="false" />
+          <select id="library-sort" aria-label="Sort library"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Song title</option><option value="artist">Artist</option><option value="album">Album</option></select>
           <button id="library-select" type="button">Select</button>
           <button id="library-select-all" type="button" hidden>Select all</button>
           <button id="library-delete-selected" type="button" hidden disabled>Delete selected</button>
@@ -177,13 +184,13 @@
         <div class="library-tools"><button id="show-downloads" type="button">Download history</button><button id="retry-failed" type="button">Retry failed</button></div>
         <dialog id="folder-dialog">
           <form method="dialog"><h2>Music folder</h2><p>Copy existing and future songs here for other music players. Sonkip keeps its own library copy too. Changing folders won’t delete earlier copies.</p>
-            <label for="folder-path">Full folder path</label><input id="folder-path" type="text" placeholder="Choose a folder or paste its full path" />
+            <label for="folder-path">Full folder path</label><input id="folder-path" name="folder-path" type="text" placeholder="Choose a folder or paste its full path…" autocomplete="off" spellcheck="false" />
             <p id="folder-status" role="status"></p>
             <button id="folder-browse" type="button">Browse…</button><button id="folder-save" type="button">Save folder</button><button id="folder-disable" type="button">Stop copying</button><button>Close</button>
           </form>
         </dialog>
         <div id="track-list" class="track-list" aria-live="polite"></div>
-        <div id="status-message" class="status-message" hidden></div>
+        <div id="status-message" class="status-message" role="status" aria-live="polite" aria-atomic="true" hidden></div>
       </section>
       <section id="pages-install" class="pages-install" hidden>
         <span class="step">01</span>

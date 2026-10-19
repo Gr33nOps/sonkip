@@ -28,6 +28,9 @@ import java.util.concurrent.atomic.AtomicReference;
 /** Internal browser only for public YouTube attestation; never exposes a JavaScript bridge. */
 public final class PublicTokenProvider {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    // This process-lifetime WebView deliberately uses only the application
+    // context; activities attach and detach it without being retained.
+    @SuppressLint("StaticFieldLeak")
     private static WebView browser;
     private static volatile boolean loaded;
     private static volatile String loadError;

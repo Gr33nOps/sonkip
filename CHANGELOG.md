@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.0
+
+- Add a review-first playlist and album flow on Android and desktop: Sonkip finds every match, selects them by default, and waits for an explicit Save action before queueing downloads.
+- Improve search ordering so exact title/artist matches and official artist uploads rank ahead of live, cover, remix, remaster, and unrelated variants.
+- Normalize downloaded metadata for cleaner song titles, artists, album artists, artwork, release grouping, track numbers, years, and genres in external music players.
+- Detect tracks from the same release even when a different YouTube upload is matched, preventing duplicate downloads without merging unrelated songs.
+- Show cover art and album details in native Android search, review, download, and library views.
+- Improve the website's keyboard focus, control semantics, live status announcements, contrast, touch targets, responsive dialogs, and layout stability.
+
 ## 2.5.1
 
 - Add library selection mode on Android and desktop with individual selection, Select all, and Delete selected.

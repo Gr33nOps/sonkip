@@ -30,6 +30,57 @@ test('active downloads expose cancellation for the actual job', () => {
   assert.match(html,/data-cancel-job="job123"/);
 });
 
+test('track actions keep accessible names when their visible labels are hidden', () => {
+  const context = {state: {activeJobs: new Map(), library: [], currentlyPlaying: null, isPlaying: false}, track};
+  const searchHtml = vm.runInNewContext(functions + '\nrenderTrackRow(track, false)', context);
+  assert.match(searchHtml, /aria-label="Download Let It Happen"/);
+
+  context.state.library = [track];
+  const savedHtml = vm.runInNewContext(functions + '\nrenderTrackRow(track, true)', context);
+  assert.match(savedHtml, /aria-label="Download Let It Happen to this device"/);
+  assert.match(savedHtml, /aria-label="Delete Let It Happen from library"/);
+});
+
+test('track artwork reserves its rendered dimensions', () => {
+  const artworkTrack = {...track, thumbnail: 'https://example.test/cover.jpg'};
+  const context = {state: {activeJobs: new Map(), library: [], currentlyPlaying: null, isPlaying: false}, track: artworkTrack};
+  const html = vm.runInNewContext(functions + '\nrenderTrackRow(track, false)', context);
+  assert.match(html, /class="track-artwork"[^>]*width="56"[^>]*height="56"/);
+});
+
+test('download mode is exposed as a pressed-button choice', () => {
+  const nodes = new Map([
+    ['mode-song', {classList: {toggle() {}}, attrs: {}, setAttribute(name, value) { this.attrs[name] = value; }}],
+    ['mode-playlist', {classList: {toggle() {}}, attrs: {}, setAttribute(name, value) { this.attrs[name] = value; }}],
+    ['search-input', {placeholder: '', focus() {}}],
+    ['input-hint', {textContent: ''}],
+  ]);
+  const code = source.slice(source.indexOf('  function setInputMode('), source.indexOf('  function renderPlaylistPreview('));
+  const context = {state: {}, $: id => nodes.get(id)};
+  vm.runInNewContext(code, context);
+  context.setInputMode('playlist');
+  assert.equal(nodes.get('mode-song').attrs['aria-pressed'], 'false');
+  assert.equal(nodes.get('mode-playlist').attrs['aria-pressed'], 'true');
+});
+
+test('playlist preview uses a placeholder instead of requesting an empty image URL', () => {
+  const nodes = new Map([
+    ['playlist-preview', {hidden: true, innerHTML: ''}],
+    ['playlist-selection-count', {textContent: ''}],
+    ['playlist-save', {disabled: false}],
+  ]);
+  const helpers = source.slice(source.indexOf('  function safe('), source.indexOf('  function renderAuthStatus('));
+  const renderer = source.slice(source.indexOf('  function renderPlaylistPreview('), source.indexOf('  async function startPlaylist('));
+  const context = {
+    state: {playlist: {entries: [{video_id: 'NMRhx71bGo4', title: 'Song', artist: 'Artist'}]}, playlistSelected: new Set()},
+    $: id => nodes.get(id),
+  };
+  vm.runInNewContext(helpers + renderer, context);
+  context.renderPlaylistPreview();
+  assert.doesNotMatch(nodes.get('playlist-preview').innerHTML, /<img[^>]*src=""/);
+  assert.match(nodes.get('playlist-preview').innerHTML, /artwork-placeholder/);
+});
+
 test('library filtering searches artists and sorts without mutating the library', () => {
   const start=source.indexOf('  function filteredLibrary(');
   const context={state:{library:[{id:'b',title:'Zulu',artist:'Band'},{id:'a',title:'Alpha',artist:'Band'},{id:'c',title:'Else',artist:'Other'}],libraryQuery:'band',librarySort:'title'}};
@@ -82,16 +133,19 @@ test('song download sends the selected audio format and metadata preference', as
   assert.deepEqual(request,{path:'/api/downloads',body:{video_id:'NMRhx71bGo4',audio_format:'mp3',embed_metadata:false}});
 });
 
-test('playlist download sends the selected audio format and metadata preference', async () => {
-  let request;
+test('playlist preview selects every track and waits for explicit save', async () => {
+  let request, polls=0;
   const code=source.slice(source.indexOf('  async function startPlaylist('),source.indexOf('  function updatePlaylistProgress('));
   const nodes=new Map([
     ['playlist-progress',{hidden:true}],['playlist-title',{textContent:''}],['playlist-count',{textContent:''}],
     ['playlist-meter-fill',{style:{width:''}}],
+    ['playlist-preview',{hidden:true}],['playlist-preview-actions',{hidden:true}],
   ]);
-  const context={state:{audioFormat:'opus',embedMetadata:true,activeJobs:new Map()},$:id=>nodes.get(id),showToast:()=>{},render:()=>{},pollJob:()=>{},
-    api:async(path,options)=>{request={path,body:JSON.parse(options.body)};return {title:'Mix',count:0,jobs:[],review:[],unmatched:[],source_count:0,notice:''};}};
+  const context={state:{audioFormat:'opus',embedMetadata:true,activeJobs:new Map(),playlistSelected:new Set()},$:id=>nodes.get(id),showToast:()=>{},render:()=>{},renderPlaylistPreview:()=>{},pollJob:()=>polls++,
+    api:async(path,options)=>{request={path,body:JSON.parse(options.body)};return {preview_id:'preview',title:'Mix',count:2,entries:[{video_id:'NMRhx71bGo4'},{video_id:'M7lc1UVf-VE'}],unmatched:[],source_count:2,notice:''};}};
   vm.runInNewContext(code,context);
   await context.startPlaylist('https://music.youtube.com/playlist?list=PLroadtrip');
-  assert.deepEqual(request,{path:'/api/playlists',body:{url:'https://music.youtube.com/playlist?list=PLroadtrip',audio_format:'opus',embed_metadata:true}});
+  assert.deepEqual(request,{path:'/api/playlists',body:{url:'https://music.youtube.com/playlist?list=PLroadtrip'}});
+  assert.deepEqual(Array.from(context.state.playlistSelected),['NMRhx71bGo4','M7lc1UVf-VE']);
+  assert.equal(polls,0);
 });

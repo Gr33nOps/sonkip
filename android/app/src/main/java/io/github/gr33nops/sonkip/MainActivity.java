@@ -126,6 +126,7 @@ public class MainActivity extends Activity {
             switch(action) {
                 case "search": find(value); break;
                 case "save": save(value); break;
+                case "save-playlist": downloadPlaylist(value); break;
                 case "play": play(value); break;
                 case "play-all": PlaybackService.playQueue(this,tracks,false,true);break;
                 case "shuffle-all": PlaybackService.playQueue(this,tracks,true,true);break;
@@ -166,18 +167,9 @@ public class MainActivity extends Activity {
                     if(isDestroyed())return;
                     importing=false; ui.setBusy(false);
                     if(playlist) {
-                        ui.remember(result.optJSONArray("jobs"));ui.showTab("downloads");
-                        ui.notice(result.optInt("count")+" queued · "+result.optJSONArray("unmatched").length()+" skipped"+(result.optString("notice").isEmpty()?"":" · YouTube matches; versions may differ"),false);
-                        JSONArray review=result.optJSONArray("review");
-                        if(review!=null && review.length()>0){
-                            String[] labels=new String[review.length()];boolean[] selected=new boolean[review.length()];
-                            for(int i=0;i<labels.length;i++){JSONObject song=review.optJSONObject(i);labels[i]=song.optString("source_title",song.optString("title"))+" → "+song.optString("title")+" · "+song.optString("artist");}
-                            new AlertDialog.Builder(this).setTitle("Check these matches")
-                                .setMultiChoiceItems(labels,selected,(dialog,index,checked)->selected[index]=checked)
-                                .setPositiveButton("Save selected",(dialog,w)->{for(int i=0;i<selected.length;i++)if(selected[i])save(review.optJSONObject(i).optString("video_id"));})
-                                .setNeutralButton("Review in Find",(dialog,w)->{ui.setResults(review);ui.showTab("find");ui.notice("These matches are uncertain. Check title and artist before saving.",false);})
-                                .setNegativeButton("Skip",null).show();
-                        }
+                        ui.setPlaylistPreview(result);
+                        JSONArray unmatched=result.optJSONArray("unmatched");int skipped=unmatched==null?0:unmatched.length();
+                        ui.notice("Review "+result.optInt("count")+" songs before saving"+(skipped==0?"":" · "+skipped+" skipped"),false);
                     }
                     else {JSONArray songs=result.optJSONArray("results");ui.setResults(songs);ui.notice(songs.length()==0?"No matches. Try another song or artist.":"Choose a song to save on your phone.",false);}
                     refresh();
@@ -194,11 +186,26 @@ public class MainActivity extends Activity {
             finally {DownloadService.end();}
         });
     }
+    private void downloadPlaylist(String value) throws Exception {
+        JSONObject selection=new JSONObject(value);JSONArray videoIds=selection.getJSONArray("video_ids");
+        if(videoIds.length()==0){ui.notice("Choose at least one song",true);return;}
+        DownloadService.begin(this);ui.setBusy(true);ui.notice("Queueing selected songs…",false);
+        requests.execute(()->{
+            try {
+                JSONObject result=request("POST","/api/playlists/download",playlistDownloadRequest(selection.getString("preview_id"),videoIds,audioFormat,embedMetadata));
+                main.post(()->{ui.setBusy(false);ui.remember(result.optJSONArray("jobs"));ui.showTab("downloads");ui.notice(result.optInt("count")+" selected song"+(result.optInt("count")==1?"":"s")+" queued · "+audioFormatLabel(audioFormat),false);refresh();});
+            }catch(Exception error){main.post(()->{ui.setBusy(false);ui.notice(error.getMessage(),true);});}
+            finally{DownloadService.end();}
+        });
+    }
     static JSONObject downloadRequest(String video, String audioFormat, boolean embedMetadata) throws org.json.JSONException {
         return new JSONObject().put("video_id",video).put("audio_format",audioFormat).put("embed_metadata",embedMetadata);
     }
     static JSONObject playlistRequest(String url, String audioFormat, boolean embedMetadata) throws org.json.JSONException {
         return new JSONObject().put("url",url).put("audio_format",audioFormat).put("embed_metadata",embedMetadata);
+    }
+    static JSONObject playlistDownloadRequest(String previewId, JSONArray videoIds, String audioFormat, boolean embedMetadata) throws org.json.JSONException {
+        return new JSONObject().put("preview_id",previewId).put("video_ids",videoIds).put("audio_format",audioFormat).put("embed_metadata",embedMetadata);
     }
     private static String audioFormatLabel(String value) {
         if("m4a".equals(value))return "M4A / AAC";

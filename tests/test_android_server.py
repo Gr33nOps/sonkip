@@ -169,6 +169,16 @@ def test_android_server_applies_selected_format_to_playlist_downloads(tmp_path: 
             method="POST",
             body={
                 "url": "https://example.com/playlist",
+            },
+        )
+        assert status == 200
+        assert server.manager.list_jobs() == []
+        status, payload = request_json(
+            f"{base_url}/api/playlists/download",
+            method="POST",
+            body={
+                "preview_id": payload["preview_id"],
+                "video_ids": ["dQw4w9WgXcQ"],
                 "audio_format": "opus",
                 "embed_metadata": False,
             },

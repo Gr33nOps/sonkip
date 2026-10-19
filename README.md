@@ -4,7 +4,7 @@
 
 Save public YouTube songs and playlists on your own device. Sonkip runs as a native Android app or a local website on Windows, macOS, and Linux. Your library stays on your device; Sonkip has no accounts or analytics.
 
-[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.5.1/Sonkip-2.5.1.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.5.1) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.6.0/Sonkip-2.6.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.6.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
 **Android 7+ · Windows · macOS · Linux**
 
@@ -17,7 +17,7 @@ The GitHub Pages site is a static project page. The downloader intentionally run
 ## Features
 
 - Search YouTube by title, artist, or album.
-- Paste a public YouTube playlist, Spotify playlist/album, or SoundCloud set. Spotify and SoundCloud provide track names; Sonkip matches those tracks on YouTube and downloads from there. Unmatched tracks are counted separately. Apple Music and other services are not supported yet.
+- Paste a public YouTube playlist, YouTube Music album, Spotify playlist/album, or SoundCloud set. Sonkip previews the matched tracks and waits for you to confirm the selection before downloading. Spotify and SoundCloud provide track names; Sonkip matches those tracks on YouTube. Unmatched tracks are counted separately. Apple Music and other services are not supported yet.
 - Choose Original, MP3, M4A, Opus, or FLAC for new desktop downloads. Compatible M4A/AAC is the default for fresh installs; an existing saved choice is preserved.
 - Keep **Music details & artwork** enabled to embed standard title, artist, album, track, year, genre, and cover tags when available. Disable it before a download to leave the file untagged. M4A/AAC is the recommended Android choice for broad player compatibility and embedded artwork.
 - Download progress, speed and estimated time; up to two concurrent downloads.
@@ -69,7 +69,7 @@ Public downloads use locally generated proof-of-origin tokens. Desktop uses Chro
 
 Matching a playlist can take a minute or more before downloads begin. Spotify's public embed can expose only part of a large playlist; Sonkip reports the number of tracks it could read, not a guaranteed full playlist count. Matches may be different uploads or editions. Sonkip skips candidates with clearly different titles, artists, or versions instead of downloading the first search result.
 
-Matches with missing duration information or weaker title/artist agreement wait for review instead of downloading automatically. On Android, select the matches you want in **Check these matches**; on desktop, review the marked rows and download them individually. Verified artist channels are preferred when other matching checks agree; this is not a guarantee of an identical recording.
+Every playlist or album import now opens a review list first. All confident and uncertain matches are selected by default; deselect anything you do not want, then choose **Save selected**. Nothing is queued until that confirmation. Exact title/artist matches and official artist uploads are ranked ahead of live, cover, remix, remaster, and unrelated variants, but you should still review the list because a YouTube match is not a guarantee of an identical recording.
 
 ### One-command Windows install
 
@@ -156,7 +156,8 @@ Routes:
 | ------ | ------------------------ | ---------------------------------------------------------------- |
 | GET    | `/api/search?q=...`      | Song search                                                      |
 | POST   | `/api/downloads`         | Start job with JSON `{ "video_id": "…", "audio_format": "mp3" }` |
-| POST   | `/api/playlists`         | Queue a playlist with JSON `{ "url": "…", "audio_format": "m4a" }` |
+| POST   | `/api/playlists`         | Preview playlist/album matches with JSON `{ "url": "…" }`             |
+| POST   | `/api/playlists/download` | Queue confirmed matches with JSON `{ "preview_id": "…", "video_ids": ["…"] }` |
 | GET    | `/api/jobs`              | Poll progress                                                    |
 | GET    | `/api/tracks`            | List downloaded songs                                            |
 | GET    | `/api/tracks/{id}/audio` | Stream local audio                                               |

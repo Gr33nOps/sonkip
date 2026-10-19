@@ -42,6 +42,14 @@ class MusicStore:
             db.execute('CREATE TABLE IF NOT EXISTS download_jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS folder_copies (folder TEXT, track_id TEXT, filename TEXT, PRIMARY KEY(folder, track_id))')
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(tracks)').fetchall()}
+            for name, sql_type in {
+                'album': 'TEXT', 'album_artist': 'TEXT', 'artwork_url': 'TEXT',
+                'track_number': 'INTEGER', 'release_date': 'TEXT',
+                'release_id': 'TEXT', 'release_type': 'TEXT',
+            }.items():
+                if name not in columns:
+                    db.execute(f'ALTER TABLE tracks ADD COLUMN {name} {sql_type}')
         for track in self.list_tracks():
             repeated = f"{track['artist']} - {track['artist']} - ".casefold()
             if FILENAME_RE.fullmatch(track['filename']) or track['filename'].casefold().startswith(repeated):
@@ -267,7 +275,11 @@ class MusicStore:
         track['filename'] = target.name
 
     def add_track(self, track: dict[str, Any]) -> None:
-        fields = ("id", "video_id", "title", "artist", "duration", "filename", "bytes", "extension", "codec", "abr")
+        fields = (
+            "id", "video_id", "title", "artist", "album", "album_artist",
+            "artwork_url", "track_number", "release_date", "release_id", "release_type",
+            "duration", "filename", "bytes", "extension", "codec", "abr",
+        )
         with self._connect() as db:
             db.execute(
                 f"INSERT INTO tracks ({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",

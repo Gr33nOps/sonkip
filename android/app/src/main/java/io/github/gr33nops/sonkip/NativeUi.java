@@ -3,6 +3,7 @@ package io.github.gr33nops.sonkip;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
@@ -16,22 +17,28 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Native Android widgets only. The internal token browser is never the app UI. */
+@android.annotation.SuppressLint({"ViewConstructor", "SetTextI18n"})
 public class NativeUi extends LinearLayout {
     public interface Actions { void run(String action, String value); }
     private static final int INK = Color.rgb(20,20,18), PAPER = Color.rgb(244,241,232),
             MUTED = Color.rgb(100,98,90), ORANGE = Color.rgb(255,80,0), LIME = Color.rgb(220,255,0);
+    private static final ExecutorService ARTWORK = Executors.newFixedThreadPool(3);
     private final Actions actions;
     private final LinearLayout content, navigation, player;
     private final TextView message, playingTitle, playingTime;
     private final Button toggle;
     private final SeekBar seek;
     private JSONArray tracks = new JSONArray(), jobs = new JSONArray(), results = new JSONArray();
+    private JSONObject playlistPreview;
     private final Map<String,String> titles = new HashMap<>();
     private String tab = "find", query = "";
     private String libraryQuery="", librarySort="newest";
     private final Set<String> selectedTracks = new LinkedHashSet<>();
+    private final Set<String> selectedPlaylistTracks = new LinkedHashSet<>();
     private boolean selectingTracks;
     private String queueDescription="Saved on this phone";
     private String audioFormatLabel="M4A / AAC";
@@ -144,10 +151,18 @@ public class NativeUi extends LinearLayout {
         busy = value;
         Button submit = findViewWithTag("search");
         if (submit != null) { submit.setEnabled(!value); submit.setText(value ? "Working…" : "Find music  →"); }
+        Button savePlaylist=findViewWithTag("playlist-save");
+        if(savePlaylist!=null){savePlaylist.setEnabled(!value && !selectedPlaylistTracks.isEmpty());savePlaylist.setText(value?"Queueing…":"Save selected songs");}
     }
     public void setResults(JSONArray value) {
-        results = value; remember(value);
+        playlistPreview = null; selectedPlaylistTracks.clear(); results = value; remember(value);
         if (tab.equals("find")) { EditText input = findViewWithTag("query"); if (input != null) query = input.getText().toString(); render(); }
+    }
+    public void setPlaylistPreview(JSONObject value) {
+        playlistPreview = value; results = new JSONArray(); selectedPlaylistTracks.clear();
+        JSONArray entries=value.optJSONArray("entries");if(entries==null)entries=new JSONArray();remember(entries);
+        for(int i=0;i<entries.length();i++){JSONObject item=entries.optJSONObject(i);if(item!=null)selectedPlaylistTracks.add(item.optString("video_id"));}
+        if(tab.equals("find")){EditText input=findViewWithTag("query");if(input!=null)query=input.getText().toString();render();}
     }
     public void remember(JSONArray entries) {
         for (int i=0;i<entries.length();i++) { JSONObject item = entries.optJSONObject(i); if(item != null) titles.put(item.optString("video_id"),item.optString("title")); }
@@ -233,13 +248,44 @@ public class NativeUi extends LinearLayout {
         content.addView(button("Save as · "+audioFormatLabel,"audio-format",v->actions.run("audio-format","")));
         content.addView(button("Music details & artwork · "+(metadataEnabled?"On":"Off"),"embed-metadata",v->actions.run("embed-metadata","")));
         gap(14);
-        if(results.length()==0) {
+        if(playlistPreview!=null) renderPlaylistPreview();
+        else if(results.length()==0) {
             content.addView(text("Save a song or a whole playlist.",18,INK,true)); gap(8);
             content.addView(text("YouTube, Spotify, or SoundCloud playlists. Spotify and SoundCloud tracks are matched on YouTube; versions may differ. Downloads continue while you use other apps.",14,MUTED,false));
         } else {
             content.addView(text(results.length()+" results",14,MUTED,true)); gap(10);
             for(int i=0;i<results.length();i++) trackCard(results.optJSONObject(i),false);
         }
+    }
+    private void renderPlaylistPreview() {
+        JSONArray entries=playlistPreview.optJSONArray("entries");if(entries==null)entries=new JSONArray();
+        content.addView(text(playlistPreview.optString("title","Playlist"),22,INK,true));
+        TextView count=text(selectedPlaylistTracks.size()+" selected",14,MUTED,true);count.setTag("playlist-selected-count");content.addView(count);gap(8);
+        LinearLayout controls=row();
+        JSONArray previewEntries=entries;
+        Button selectAll=button("Select all","playlist-select-all",v->{selectedPlaylistTracks.clear();for(int i=0;i<previewEntries.length();i++)selectedPlaylistTracks.add(previewEntries.optJSONObject(i).optString("video_id"));render();});
+        Button deselectAll=button("Deselect all","playlist-deselect-all",v->{selectedPlaylistTracks.clear();render();});
+        controls.addView(selectAll,new LayoutParams(0,dp(48),1));controls.addView(deselectAll,new LayoutParams(0,dp(48),1));content.addView(controls);gap(8);
+        for(int i=0;i<entries.length();i++) {
+            JSONObject item=entries.optJSONObject(i);if(item==null)continue;
+            String id=item.optString("video_id");LinearLayout box=card();
+            addArtwork(box,item,id);
+            CheckBox selected=new CheckBox(getContext());selected.setTag("playlist-select-"+id);selected.setChecked(selectedPlaylistTracks.contains(id));
+            selected.setText(item.optString("title","Untitled")+"\n"+metadataLine(item));
+            selected.setOnCheckedChangeListener((button,checked)->{if(checked)selectedPlaylistTracks.add(id);else selectedPlaylistTracks.remove(id);updatePlaylistSelectionControls();});
+            box.addView(selected,new LayoutParams(-1,-2));
+        }
+        Button save=button("Save selected songs","playlist-save",v->actions.run("save-playlist",playlistSelectionJson()));
+        save.setEnabled(!selectedPlaylistTracks.isEmpty());save.setBackgroundTintList(ColorStateList.valueOf(ORANGE));content.addView(save,new LayoutParams(-1,dp(54)));
+    }
+    private String playlistSelectionJson() {
+        JSONArray ids=new JSONArray();for(String id:selectedPlaylistTracks)ids.put(id);
+        try{return new JSONObject().put("preview_id",playlistPreview.optString("preview_id")).put("video_ids",ids).toString();}
+        catch(org.json.JSONException impossible){throw new IllegalStateException(impossible);}
+    }
+    private void updatePlaylistSelectionControls() {
+        Button save=findViewWithTag("playlist-save");if(save!=null)save.setEnabled(!busy && !selectedPlaylistTracks.isEmpty());
+        TextView count=findViewWithTag("playlist-selected-count");if(count!=null)count.setText(selectedPlaylistTracks.size()+" selected");
     }
     private void renderLibrary() {
         heading("SAVED.",tracks.length()+" songs on this phone");
@@ -295,8 +341,8 @@ public class NativeUi extends LinearLayout {
     private void trackCard(JSONObject item, boolean saved) {
         if(item==null) return;
         String id = item.optString(saved ? "id" : "video_id");
-        LinearLayout box = card(); box.addView(text(item.optString("title","Untitled"),17,INK,true));
-        box.addView(text(item.optString("artist","Unknown artist")+"  ·  "+time(item.optInt("duration")),12,MUTED,false));
+        LinearLayout box = card();addArtwork(box,item,id);box.addView(text(item.optString("title","Untitled"),17,INK,true));
+        TextView metadata=text(metadataLine(item),12,MUTED,false);metadata.setTag("metadata-"+id);box.addView(metadata);
         if(saved && selectingTracks) {
             CheckBox selected=new CheckBox(getContext());selected.setTag("select-"+id);selected.setText("Select this song");selected.setChecked(selectedTracks.contains(id));
             selected.setOnCheckedChangeListener((button,checked)->{if(checked)selectedTracks.add(id);else selectedTracks.remove(id);updateDeleteSelected();});
@@ -315,6 +361,42 @@ public class NativeUi extends LinearLayout {
             more.setContentDescription("More options for "+item.optString("title")); buttons.addView(more);
         }
         box.addView(buttons);
+    }
+    private String metadataLine(JSONObject item) {
+        java.util.List<String> details=new java.util.ArrayList<>();
+        details.add(item.optString("artist","Unknown artist"));
+        String album=item.optString("album").trim();if(!album.isEmpty())details.add(album);
+        String date=item.optString("release_date").trim();if(date.length()>=4)details.add(date.substring(0,4));
+        int duration=item.optInt("duration");if(duration>0)details.add(time(duration));
+        return android.text.TextUtils.join("  ·  ",details);
+    }
+    static boolean isTrustedArtworkUrl(String value) {
+        try {
+            java.net.URL url=new java.net.URL(value);
+            if(!"https".equalsIgnoreCase(url.getProtocol()))return false;
+            String host=url.getHost().toLowerCase(Locale.ROOT);
+            return host.equals("i.ytimg.com") || host.equals("lh3.googleusercontent.com")
+                    || host.equals("i.scdn.co") || host.equals("image-cdn-ak.spotifycdn.com")
+                    || host.equals("mosaic.scdn.co") || host.equals("i1.sndcdn.com");
+        } catch(java.net.MalformedURLException ignored) {
+            return false;
+        }
+    }
+    private void addArtwork(LinearLayout box,JSONObject item,String id) {
+        String artwork=item.optString("artwork_url",item.optString("thumbnail")).trim();if(artwork.isEmpty())return;
+        if(!isTrustedArtworkUrl(artwork))return;
+        ImageView image=new ImageView(getContext());image.setTag("artwork-"+id);image.setContentDescription("Album artwork for "+item.optString("title","this song"));
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackgroundColor(Color.rgb(224,221,212));box.addView(image,new LayoutParams(-1,dp(112)));
+        ARTWORK.execute(()->{
+            java.net.HttpURLConnection connection=null;
+            try {
+                connection=(java.net.HttpURLConnection)new java.net.URL(artwork).openConnection();connection.setConnectTimeout(5000);connection.setReadTimeout(10000);
+                connection.setInstanceFollowRedirects(false);
+                if(connection.getResponseCode()!=java.net.HttpURLConnection.HTTP_OK)return;
+                long size=connection.getContentLengthLong();if(size>5L*1024L*1024L)return;
+                android.graphics.Bitmap bitmap=BitmapFactory.decodeStream(connection.getInputStream());if(bitmap!=null)image.post(()->image.setImageBitmap(bitmap));
+            }catch(Exception ignored){}finally{if(connection!=null)connection.disconnect();}
+        });
     }
     private void renderDownloads() {
         int complete=0,failed=0;
