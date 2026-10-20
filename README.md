@@ -1,8 +1,8 @@
 ![sonkip. — Find it. Save it. Play it.](docs/brand.svg)
 
-# sonkip.
+# Sonkip — Open-Source Music Downloader
 
-Save public YouTube songs and playlists on your own device. Sonkip runs as a native Android app or a local website on Windows, macOS, and Linux. Your library stays on your device; Sonkip has no accounts or analytics.
+Sonkip is a free, open-source music downloader and private local library for Android, Windows, macOS, and Linux. Save public songs, playlists, and albums on your own device with available artwork and music metadata. Sonkip has no accounts, ads, analytics, or hosted cloud library.
 
 [Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.6.0/Sonkip-2.6.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.6.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
@@ -178,7 +178,7 @@ Tests use a temporary library and do not call YouTube.
 
 ### Building Android
 
-Install Java 17, Gradle 8.13, Android SDK 35, NDK `28.2.13676358`, CMake and Ninja. Set `ANDROID_HOME` to the SDK folder. Run `python android/build_runtime.py` from the repository root, then `gradle -p android :app:assembleDebug`. The runtime build downloads checksum-pinned QuickJS-NG source and builds both ARM ABIs; its license is included in the APK. GitHub Actions performs these steps automatically.
+Install Java 17, Gradle 8.13, Android SDK 36, NDK `28.2.13676358`, CMake and Ninja. Set `ANDROID_HOME` to the SDK folder. Run `python android/build_runtime.py` from the repository root, then `gradle -p android :app:assembleDebug`. The runtime build downloads checksum-pinned QuickJS-NG source and builds both ARM ABIs; its license is included in the APK. GitHub Actions performs these steps automatically.
 
 ## Limitations / future work
 

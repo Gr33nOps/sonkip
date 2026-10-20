@@ -32,7 +32,9 @@
 
   const $ = (id) => document.getElementById(id);
   const audio = $("audio-el");
-  const isStaticPages = window.location.hostname.endsWith(".github.io");
+  const isStaticPages = !window.SonkipPlatform.isLocalAppHost(
+    window.location.hostname,
+  );
 
   function safe(str) {
     return String(str ?? "").replace(

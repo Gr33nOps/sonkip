@@ -34,7 +34,9 @@ jobs:
         run: |
           mkdir -p _site/static
           cp static/index.html _site/index.html
-          cp static/style.css static/app.js static/platform.js static/favicon.svg _site/static/
+          cp static/style.css static/app.js static/platform.js static/favicon.svg static/sonkip-social.png _site/static/
+          cp -R static/fonts _site/static/fonts
+          cp static/robots.txt static/sitemap.xml _site/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

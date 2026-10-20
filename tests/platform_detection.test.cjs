@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { detectPlatform, getPlatformDownload } = require('../static/platform.js');
+const { detectPlatform, getPlatformDownload, isLocalAppHost } = require('../static/platform.js');
 
 test('detects Android before Linux from its user agent', () => {
   assert.equal(
@@ -30,4 +30,12 @@ test('returns the matching download and setup command', () => {
   assert.equal(getPlatformDownload('windows').command.startsWith('irm https://'), true);
   assert.equal(getPlatformDownload('macos').button, 'DOWNLOAD FOR MAC (.ZIP)');
   assert.equal(getPlatformDownload('linux').button, 'DOWNLOAD FOR LINUX (.TAR.GZ)');
+});
+
+test('shows the downloader UI only on loopback hosts and the landing page elsewhere', () => {
+  assert.equal(isLocalAppHost('localhost'), true);
+  assert.equal(isLocalAppHost('127.0.0.1'), true);
+  assert.equal(isLocalAppHost('[::1]'), true);
+  assert.equal(isLocalAppHost('gr33nops.github.io'), false);
+  assert.equal(isLocalAppHost('sonkip.example'), false);
 });

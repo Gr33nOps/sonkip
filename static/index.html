@@ -4,21 +4,159 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#f3f0e8" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="author" content="Gr33nOps" />
     <meta
       name="description"
-      content="sonkip. — Find it. Save it. Play it. A private, local music and playlist downloader."
+      content="Sonkip is a free, open-source music downloader for Android, Windows, macOS and Linux. Save public songs, playlists and albums with artwork and metadata."
     />
-    <title>sonkip. — Find it. Save it. Play it.</title>
+    <title>Sonkip — Open-Source Music Downloader for Android &amp; Desktop</title>
+    <link rel="canonical" href="https://gr33nops.github.io/sonkip/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Sonkip" />
+    <meta property="og:locale" content="en_US" />
+    <meta
+      property="og:title"
+      content="Sonkip — Open-Source Music Downloader for Android &amp; Desktop"
+    />
+    <meta
+      property="og:description"
+      content="Save public songs, playlists and albums to a private local library on Android, Windows, macOS or Linux. Free, open source and ad-free."
+    />
+    <meta property="og:url" content="https://gr33nops.github.io/sonkip/" />
+    <meta
+      property="og:image"
+      content="https://gr33nops.github.io/sonkip/static/sonkip-social.png"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Sonkip open-source music downloader for Android and desktop"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Sonkip — Open-Source Music Downloader"
+    />
+    <meta
+      name="twitter:description"
+      content="A free, private music downloader and local library for Android, Windows, macOS and Linux."
+    />
+    <meta
+      name="twitter:image"
+      content="https://gr33nops.github.io/sonkip/static/sonkip-social.png"
+    />
+    <meta
+      name="twitter:image:alt"
+      content="Sonkip open-source music downloader for Android and desktop"
+    />
     <link rel="icon" href="./static/favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <script>
+      if (["localhost", "127.0.0.1", "::1"].includes(location.hostname)) {
+        document.documentElement.dataset.localApp = "true";
+      }
+    </script>
     <link rel="stylesheet" href="./static/style.css" />
     <script src="./static/platform.js" defer></script>
     <script src="./static/app.js" defer></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://gr33nops.github.io/sonkip/#website",
+            "url": "https://gr33nops.github.io/sonkip/",
+            "name": "Sonkip",
+            "description": "Free, open-source music downloader and private local library for Android and desktop."
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://gr33nops.github.io/sonkip/#app",
+            "name": "Sonkip",
+            "url": "https://gr33nops.github.io/sonkip/",
+            "image": "https://gr33nops.github.io/sonkip/static/sonkip-social.png",
+            "description": "A free, open-source music downloader that saves public songs, playlists and albums to a private local library with artwork and metadata.",
+            "applicationCategory": "MultimediaApplication",
+            "operatingSystem": ["Android", "Windows", "macOS", "Linux"],
+            "softwareVersion": "2.6.0",
+            "isAccessibleForFree": true,
+            "downloadUrl": "https://github.com/Gr33nOps/sonkip/releases/latest",
+            "installUrl": "https://github.com/Gr33nOps/sonkip#quick-start",
+            "sameAs": "https://github.com/Gr33nOps/sonkip",
+            "license": "https://opensource.org/license/mit",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "featureList": [
+              "Search public music by title, artist or album",
+              "Preview playlists and albums before saving",
+              "Embed title, artist, album, artwork and track metadata",
+              "Keep music and library data on the user's device",
+              "Play saved music offline",
+              "Run on Android, Windows, macOS and Linux"
+            ]
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://gr33nops.github.io/sonkip/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is Sonkip free and open source?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Sonkip is free software released under the MIT License. Its source code and Android releases are available on GitHub."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Which devices does Sonkip support?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Sonkip supports Android 7 or newer on ARM devices and local desktop installation on Windows, macOS and Linux."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can Sonkip save playlists and albums?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Sonkip previews supported public playlists and albums, lets the user review each match, and downloads only the selected tracks after confirmation."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does Sonkip keep music private?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Sonkip runs locally and stores the library on the user's device. The project has no Sonkip account, analytics or hosted cloud music library."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does Sonkip add cover art and music metadata?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "When reliable public details are available, Sonkip can embed title, artist, album, album artist, track number, year, genre and artwork in new downloads."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What content can I download with Sonkip?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Sonkip is for public content that the user owns or has permission to download. It does not bypass DRM, paywalls or provider permissions."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -54,11 +192,12 @@
             OPEN SOURCE MUSIC TOOL <span>—</span> NO ACCOUNT REQUIRED
           </p>
           <h1 id="hero-title" class="hero-title">
+            <span class="hero-product">Open-source music downloader</span>
             <span>Find it.</span><span>Save it.</span><span>Play it.</span>
           </h1>
           <p class="hero-copy">
-            Songs and whole playlists, downloaded on your computer. Nothing
-            uploaded. Nothing tracked.
+            Save public songs, playlists and albums to a private local library
+            on Android or desktop. Nothing uploaded. Nothing tracked.
           </p>
         </div>
         <div class="record-stage" aria-hidden="true">
@@ -192,7 +331,7 @@
         <div id="track-list" class="track-list" aria-live="polite"></div>
         <div id="status-message" class="status-message" role="status" aria-live="polite" aria-atomic="true" hidden></div>
       </section>
-      <section id="pages-install" class="pages-install" hidden>
+      <section id="pages-install" class="pages-install pages-only">
         <span class="step">01</span>
         <p class="eyebrow">ONE COMMAND · THEN PRESS PLAY</p>
         <h2>Easy to<br />install.</h2>
@@ -231,6 +370,146 @@
         <div class="privacy-row">
           <span>NO SIGN UP REQUIRED</span><span>NO ANALYTICS</span
           ><span>NO CLOUD LIBRARY</span>
+        </div>
+      </section>
+      <section id="seo-content" class="seo-content pages-only" aria-labelledby="seo-title">
+        <div class="seo-intro">
+          <p class="eyebrow">FREE · OPEN SOURCE · YOUR MUSIC STAYS LOCAL</p>
+          <h2 id="seo-title">A music downloader built around your library.</h2>
+          <p>
+            Sonkip is a free, open-source music downloader for Android,
+            Windows, macOS and Linux. Search for public music or paste a
+            supported song, playlist or album link, review the result, then
+            save the tracks you choose. Sonkip keeps the audio and library
+            database on your device instead of creating another online
+            account or cloud collection.
+          </p>
+          <p>
+            It is designed for people who want an organized offline music
+            library, not a folder full of mystery files. When reliable public
+            information is available, Sonkip preserves the song title, primary
+            artist, album, album artist, track number, release date, genre and
+            cover artwork. That metadata helps Android players and desktop
+            music apps group full albums correctly.
+          </p>
+        </div>
+
+        <div class="seo-feature-grid" aria-label="Sonkip features">
+          <article>
+            <span>01</span>
+            <h3>Review playlists before downloading</h3>
+            <p>
+              A pasted playlist or album opens as a track list first. Select
+              all, remove uncertain matches or save only a few songs. Nothing
+              enters the download queue until you confirm the selection.
+            </p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Cleaner albums and metadata</h3>
+            <p>
+              Release identity, album artist, track order and shared artwork
+              keep tracks from the same album together. Sonkip avoids
+              inventing an album when trustworthy album information is not
+              available.
+            </p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Private and local by design</h3>
+            <p>
+              There is no Sonkip account, advertising profile, analytics
+              tracker or hosted cloud library. The Android app stores music in
+              app-private storage, while the desktop service listens only on
+              your own computer.
+            </p>
+          </article>
+          <article>
+            <span>04</span>
+            <h3>Android and desktop playback</h3>
+            <p>
+              Play saved tracks offline, create local playlists, shuffle the
+              library and keep downloads running in the background on Android.
+              Desktop users can choose Original, MP3, M4A, Opus or FLAC output.
+            </p>
+          </article>
+        </div>
+
+        <div class="seo-how" aria-labelledby="how-title">
+          <div>
+            <p class="eyebrow">HOW SONKIP WORKS</p>
+            <h2 id="how-title">From a public link to an organized local library.</h2>
+          </div>
+          <ol>
+            <li>
+              <strong>Find a song or paste a link.</strong>
+              Search by song, artist or album, or paste a supported public
+              YouTube, YouTube Music, Spotify or SoundCloud playlist link.
+            </li>
+            <li>
+              <strong>Check every match.</strong>
+              Sonkip prioritizes exact and official-looking matches, shows the
+              complete preview and lets you change the selection before saving.
+            </li>
+            <li>
+              <strong>Save and listen locally.</strong>
+              New tracks enter your on-device library with available artwork
+              and metadata. Previously saved music continues to play offline.
+            </li>
+          </ol>
+        </div>
+
+        <div class="seo-platforms" aria-labelledby="platforms-title">
+          <p class="eyebrow">ONE PROJECT · FOUR PLATFORMS</p>
+          <h2 id="platforms-title">Download Sonkip for Android or run it on desktop.</h2>
+          <p>
+            Install the APK on Android 7 or newer, use one-command setup on
+            Windows, or run the macOS and Linux installer. The public website
+            explains the project and selects the right download; the music
+            downloader itself runs locally on your device.
+          </p>
+          <div class="seo-links">
+            <a href="https://github.com/Gr33nOps/sonkip/releases/latest">Latest Android release ↗</a>
+            <a href="https://github.com/Gr33nOps/sonkip#quick-start">Desktop installation guide ↗</a>
+            <a href="https://github.com/Gr33nOps/sonkip">Source code on GitHub ↗</a>
+          </div>
+        </div>
+
+        <div class="seo-faq" aria-labelledby="faq-title">
+          <p class="eyebrow">QUESTIONS, ANSWERED</p>
+          <h2 id="faq-title">Sonkip music downloader FAQ</h2>
+          <div class="seo-faq-list">
+            <details>
+              <summary>Is Sonkip free and open source?</summary>
+              <p>Yes. Sonkip is free software released under the MIT License. The source code, issue tracker and Android APK releases are public on GitHub.</p>
+            </details>
+            <details>
+              <summary>Which devices does Sonkip support?</summary>
+              <p>Sonkip supports Android 7 or newer on ARM devices. The local desktop version runs on Windows, macOS and Linux.</p>
+            </details>
+            <details>
+              <summary>Can Sonkip download a playlist or full album?</summary>
+              <p>Yes. Supported public playlists and albums open in a review screen first. You choose the tracks, then press Save selected to begin downloading.</p>
+            </details>
+            <details>
+              <summary>Does Sonkip download directly from Spotify or SoundCloud?</summary>
+              <p>No. Sonkip reads available public track information, searches for possible YouTube matches and asks you to review those matches. Versions can differ, and unmatched tracks are reported instead of guessed.</p>
+            </details>
+            <details>
+              <summary>Does it add album artwork and music metadata?</summary>
+              <p>When reliable details are available, Sonkip can embed title, artist, album, album artist, track number, year, genre and cover artwork in new downloads.</p>
+            </details>
+            <details>
+              <summary>Is Sonkip an online download service?</summary>
+              <p>No. The website is the project landing page. Search, download, playback and library storage happen in the Android app or on your own desktop computer.</p>
+            </details>
+          </div>
+          <p class="seo-legal">
+            Use Sonkip only for public content you own or have permission to
+            download, and follow the source platform's terms. Sonkip does not
+            bypass DRM, paywalls or provider permissions. Source availability
+            and public metadata can change over time.
+          </p>
         </div>
       </section>
       <footer class="site-footer">

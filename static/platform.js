@@ -67,7 +67,15 @@
     return downloads[platform] || downloads.unknown;
   }
 
-  const api = { detectPlatform, getPlatformDownload };
+  function isLocalAppHost(hostname) {
+    const host = String(hostname || "")
+      .trim()
+      .toLowerCase()
+      .replace(/^\[(.*)\]$/, "$1");
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  }
+
+  const api = { detectPlatform, getPlatformDownload, isLocalAppHost };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root) root.SonkipPlatform = api;
 })(typeof window !== "undefined" ? window : globalThis);
