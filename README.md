@@ -4,11 +4,15 @@
 
 Sonkip is a free, open-source music downloader and private local library for Android, Windows, macOS, and Linux. Save public songs, playlists, and albums on your own device with available artwork and music metadata. Sonkip has no accounts, ads, analytics, or hosted cloud library.
 
-[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.6.0/Sonkip-2.6.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.6.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.6.1/Sonkip-2.6.1.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.6.1) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
 **Android 7+ · Windows · macOS · Linux**
 
 Android includes local playlists, shuffle, ordered playback, and background playback/download services. The desktop version runs in your browser on localhost. Choose the output format before saving a song or playlist.
+
+On first launch, Sonkip asks for your preferred audio format, whether to include song details and artwork, and whether to copy downloads to a Music folder. Android can check the phone's indexed audio when you grant audio-library access; a playlist track with matching title, artist, and duration is skipped. If access is denied or the metadata is incomplete, Sonkip cannot reliably identify that existing file. Both Android and desktop also reuse songs already saved in Sonkip, even when the selected output format changes.
+
+If an Android source has no AAC stream for the selected M4A format, Sonkip saves the available original audio and labels the fallback format in Downloads. Other unavailable or restricted sources can still fail.
 
 Use **Library → Music folder** to copy existing and future songs into a folder other music players can scan. Sonkip keeps its internal library copy as well. Changing or disabling this setting does not delete copies already placed in earlier folders.
 

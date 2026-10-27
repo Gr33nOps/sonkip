@@ -330,23 +330,31 @@ def _search_result(item: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(video_id, str) or not VIDEO_ID_RE.fullmatch(video_id):
         return None
     metadata = resolve_music_metadata({**item, "video_id": video_id})
+    title_words = _words(str(item.get("title") or ""))
+    channel_words = _words(str(item.get("uploader") or item.get("channel") or ""))
+    lyrics_only = bool(title_words & {"lyrics", "lyric"} or channel_words & {"lyrics", "lyric"})
+    artist_words = _words(metadata["artist"])
+    artist_channel = bool(artist_words and artist_words.issubset(channel_words))
+    title_prefix = str(item.get("title") or "").split(" - ", 1)
+    credited_artist = _words(title_prefix[0]) if len(title_prefix) == 2 else set()
+    credited_artist_matches = not credited_artist or bool(credited_artist & artist_words)
     return {
         "video_id": video_id,
         **metadata,
         "thumbnail": metadata["artwork_url"],
         "channel_is_verified": bool(item.get("channel_is_verified")),
+        "is_lyrics_upload": lyrics_only,
+        "artist_channel": artist_channel,
         "view_count": item.get("view_count") if isinstance(item.get("view_count"), int) else None,
-        "source_quality": "official" if (
-            item.get("channel_is_verified")
-            or "topic" in _words(str(item.get("uploader") or item.get("channel") or ""))
-            or "official" in _words(str(item.get("title") or ""))
+        "source_quality": "official" if not lyrics_only and artist_channel and credited_artist_matches and (
+            item.get("channel_is_verified") or "topic" in channel_words
         ) else "community",
     }
 
 
 def _rank_search_results(query: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     query_words = _words(query)
-    version_words = {"live", "cover", "remix", "slowed", "instrumental", "karaoke", "nightcore", "demo", "sped", "acoustic"}
+    version_words = {"live", "cover", "remix", "slowed", "instrumental", "karaoke", "nightcore", "demo", "sped", "acoustic", "making", "footnotes", "reaction", "interview", "tutorial", "explained"}
     ranked: list[tuple[float, dict[str, Any]]] = []
     for raw in items:
         result = _search_result(raw)
@@ -362,12 +370,16 @@ def _rank_search_results(query: str, items: list[dict[str, Any]]) -> list[dict[s
             score += 0.45
         if result["source_quality"] == "official":
             score += 0.35
+        if result["artist_channel"]:
+            score += 0.3
         if result["album"]:
             score += 0.12
         views = result.get("view_count")
         if isinstance(views, int) and views > 0:
             score += min(0.24, math.log10(views + 1) / 28)
         score -= 0.65 * len(unwanted_versions)
+        if result["is_lyrics_upload"] and not query_words & {"lyric", "lyrics"}:
+            score -= 0.85
         ranked.append((score, result))
     ranked.sort(key=lambda pair: pair[0], reverse=True)
     if not ranked:
@@ -480,6 +492,8 @@ def _match_track(track: dict, cookiefile: Path | None) -> dict | None:
     best, best_score = None, 0
     for candidate in candidates:
         words = _words(candidate['title'])
+        if (candidate.get('is_lyrics_upload') or words & {'lyric', 'lyrics'}) and not title_words & {'lyric', 'lyrics'}:
+            continue
         if (words & versions) - (title_words & versions):
             continue
         title_score = len(title_words & words) / max(1, len(title_words))
@@ -498,6 +512,10 @@ def _match_track(track: dict, cookiefile: Path | None) -> dict | None:
                 score += .3
         if expected and actual:
             score += .1 * max(0, 1 - abs(expected - actual) / max(1, expected))
+        if candidate.get('source_quality') == 'official':
+            score += .35
+        if (candidate.get('is_lyrics_upload') or words & {'lyric', 'lyrics'}) and not title_words & {'lyric', 'lyrics'}:
+            score -= .85
         if score > best_score:
             best = {**candidate, 'needs_review': not (expected and actual and title_score == 1 and artist_score == 1)}
             best_score = score
@@ -640,11 +658,14 @@ class DownloadManager:
         audio_format = normalize_audio_format(audio_format)
         job_id = uuid.uuid4().hex
         with self.lock:
-            expected_extension = audio_format if audio_format != "original" else None
             saved = next((track for track in self.store.list_tracks()
-                          if (track['video_id'] == video_id or _same_recording(track, source_metadata or {}))
-                          and (expected_extension is None or track['extension'] == expected_extension)), None)
+                          if track['video_id'] == video_id or _same_recording(track, source_metadata or {})), None)
             if saved:
+                for stale_id, stale in list(self.jobs.items()):
+                    if (stale_id != saved['id'] and stale.get('video_id') == video_id
+                            and stale.get('status') == 'error'):
+                        self.jobs.pop(stale_id)
+                        self.store.delete_job(stale_id)
                 job_id = saved['id']
                 self.jobs[job_id] = {
                     'id': job_id, 'video_id': video_id, 'status': 'complete', 'percent': 100,
@@ -777,6 +798,7 @@ class DownloadManager:
                 **youtube_access_options(self.store.youtube_cookies_path),
                 **format_options,
             }
+            fallback_applied = False
             try:
                 for attempt in range(3):
                     if cancelled.is_set():
@@ -796,22 +818,34 @@ class DownloadManager:
                                      error='Connection interrupted; retrying…', speed=None, eta=None)
                         cancelled.wait(2 ** attempt)
             except Exception as first_error:
-                if cancelled.is_set() or "403" not in str(first_error) or audio_format != "original":
-                    raise
-                # A listed direct stream can expire or reject this client while
-                # the same video's public HLS stream is still available.
-                for partial in self.store.tracks_dir.glob(job_id + ".*"):
-                    if partial.is_file():
-                        partial.unlink()
-                self._update(job_id, status="starting", percent=0)
-                try:
-                    with YoutubeDL({**opts, "format": "best[protocol^=m3u8][acodec!=none]"}) as ydl:
+                if (not cancelled.is_set() and os.environ.get("SONKIP_ANDROID_TOKENS") == "1"
+                        and audio_format == "m4a" and "requested format is not available" in str(first_error).lower()):
+                    # Some public uploads provide Opus only. Preserve the song
+                    # in its available audio format instead of failing M4A.
+                    for partial in self.store.tracks_dir.glob(job_id + ".*"):
+                        if partial.is_file():
+                            partial.unlink()
+                    self._update(job_id, status="starting", percent=0)
+                    with YoutubeDL({**opts, "format": "bestaudio[acodec!=none]/best[acodec!=none]"}) as ydl:
                         info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
-                except Exception:
-                    raise RuntimeError(
-                        "YouTube rejected this download and no working public alternative was available. "
-                        "Try again later, or use Access for media your account is allowed to download."
-                    ) from first_error
+                    fallback_applied = True
+                else:
+                    if cancelled.is_set() or "403" not in str(first_error) or audio_format != "original":
+                        raise
+                    # A listed direct stream can expire or reject this client while
+                    # the same video's public HLS stream is still available.
+                    for partial in self.store.tracks_dir.glob(job_id + ".*"):
+                        if partial.is_file():
+                            partial.unlink()
+                    self._update(job_id, status="starting", percent=0)
+                    try:
+                        with YoutubeDL({**opts, "format": "best[protocol^=m3u8][acodec!=none]"}) as ydl:
+                            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+                    except Exception:
+                        raise RuntimeError(
+                            "YouTube rejected this download and no working public alternative was available. "
+                            "Try again later, or use Access for media your account is allowed to download."
+                        ) from first_error
             if not info:
                 raise RuntimeError("No audio information was returned")
             if cancelled.is_set():
@@ -824,7 +858,7 @@ class DownloadManager:
                 raise RuntimeError("Download ended without an audio file")
             path = max(matching, key=lambda p: p.stat().st_size)
             if (os.environ.get("SONKIP_ANDROID_TOKENS") == "1"
-                    and audio_format == "m4a" and path.suffix.lower() != ".m4a"):
+                    and audio_format == "m4a" and not fallback_applied and path.suffix.lower() != ".m4a"):
                 from java import jclass
                 target = path.with_suffix(".m4a")
                 target.unlink(missing_ok=True)
@@ -844,7 +878,7 @@ class DownloadManager:
                     # remain available if artwork or a malformed source tag fails.
                     metadata_embedded = False
             selected = (info.get("requested_downloads") or [{}])[0]
-            codec = audio_format if audio_format in CONVERTED_AUDIO_FORMATS else selected.get("acodec") or info.get("acodec")
+            codec = audio_format if audio_format in CONVERTED_AUDIO_FORMATS and not fallback_applied else selected.get("acodec") or info.get("acodec")
             abr = selected.get("abr") or info.get("abr")
             details = resolve_music_metadata(info, source_metadata)
             track = {
@@ -872,7 +906,8 @@ class DownloadManager:
                 self.store.add_track(track)
                 self.jobs[job_id].update(status='complete', percent=100, track_id=job_id, error=None, speed=None, eta=None,
                                          title=track['title'], artist=track['artist'],
-                                         metadata_embedded=metadata_embedded)
+                                         metadata_embedded=metadata_embedded,
+                                         format_fallback=track['extension'] if fallback_applied else None)
                 self.store.save_job(self.jobs[job_id])
         except Exception as exc:
             # yt-dlp can fail due to deleted, blocked or unavailable content.

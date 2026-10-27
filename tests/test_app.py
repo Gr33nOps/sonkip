@@ -114,6 +114,45 @@ def test_same_release_track_is_not_downloaded_again_from_another_upload(tmp_path
     manager.pool.shutdown(wait=True)
 
 
+def test_saved_song_is_reused_when_new_format_differs(tmp_path, monkeypatch):
+    app = create_app(tmp_path)
+    manager = app.state.manager
+    source = manager.store.tracks_dir / ('b' * 32 + '.m4a')
+    source.write_bytes(b'audio')
+    manager.store.add_track({
+        'id': 'b' * 32, 'video_id': VIDEO_ID, 'title': 'First', 'artist': 'Artist',
+        'duration': 180, 'filename': source.name, 'bytes': 5,
+        'extension': 'm4a', 'codec': 'aac', 'abr': 128,
+    })
+    monkeypatch.setattr(manager, '_run', lambda *args: (_ for _ in ()).throw(AssertionError('download started')))
+    job_id = manager.start(VIDEO_ID, 'webm')
+    assert job_id == 'b' * 32
+    assert manager.get_job(job_id)['already_saved'] is True
+    manager.pool.shutdown(wait=True)
+
+
+def test_reusing_saved_song_clears_older_failed_download_entry(tmp_path):
+    app = create_app(tmp_path)
+    manager = app.state.manager
+    source = manager.store.tracks_dir / ('c' * 32 + '.webm')
+    source.write_bytes(b'audio')
+    manager.store.add_track({
+        'id': 'c' * 32, 'video_id': VIDEO_ID, 'title': 'Song', 'artist': 'Artist',
+        'duration': 180, 'filename': source.name, 'bytes': 5,
+        'extension': 'webm', 'codec': 'opus', 'abr': 128,
+    })
+    failed = {'id': 'd' * 32, 'video_id': VIDEO_ID, 'status': 'error', 'audio_format': 'm4a',
+              'error': 'Requested format is not available'}
+    manager.jobs[failed['id']] = failed
+    manager.store.save_job(failed)
+    try:
+        assert manager.start(VIDEO_ID, 'm4a') == 'c' * 32
+        assert [job['id'] for job in manager.list_jobs() if job['video_id'] == VIDEO_ID] == ['c' * 32]
+        assert [job['id'] for job in manager.store.load_jobs() if job['video_id'] == VIDEO_ID] == ['c' * 32]
+    finally:
+        manager.pool.shutdown(wait=True)
+
+
 class FakeYoutubeDL:
     def __init__(self, opts):
         self.opts = opts

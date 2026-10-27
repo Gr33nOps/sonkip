@@ -59,9 +59,14 @@ public class MainActivity extends Activity {
             return insets;
         });
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        java.util.ArrayList<String> permissions = new java.util.ArrayList<>();
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED)
-            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 42);
+            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS);
+        String audioPermission = Build.VERSION.SDK_INT >= 33
+            ? android.Manifest.permission.READ_MEDIA_AUDIO : android.Manifest.permission.READ_EXTERNAL_STORAGE;
+        if (!DeviceMusic.canRead(this)) permissions.add(audioPermission);
+        if (!permissions.isEmpty()) requestPermissions(permissions.toArray(new String[0]), 43);
         try { PublicTokenProvider.initialize(this); }
         catch(Exception error) { ui.notice("Downloads unavailable: "+error.getMessage(),true); }
         startBackend(getApplicationContext());
@@ -69,7 +74,7 @@ public class MainActivity extends Activity {
             for(int attempt=0;attempt<100 && !isDestroyed();attempt++) {
                 try {
                     request("GET","/api/health",null);
-                    main.post(() -> {ready=true; ui.notice("Local library ready · no account needed",false); downloadAction("/api/jobs/resume-interrupted");refresh();});
+                    main.post(() -> {ready=true; ui.notice("Local library ready · no account needed",false); downloadAction("/api/jobs/resume-interrupted");refresh();showFirstRunSetup();});
                     return;
                 } catch(Exception ignored) {
                     if(backendError!=null) break;
@@ -179,9 +184,15 @@ public class MainActivity extends Activity {
         });
     }
     private void save(String video) {
+        JSONObject source = ui.sourceFor(video);
         DownloadService.begin(this);
         requests.execute(() -> {
-            try {request("POST","/api/downloads",downloadRequest(video,audioFormat,embedMetadata));main.post(() -> {ui.showTab("downloads");ui.notice("Song queued · "+audioFormatLabel(audioFormat),false);refresh();});}
+            try {
+                if (DeviceMusic.contains(DeviceMusic.read(this), source)) {
+                    main.post(() -> ui.notice("Already on this phone · download skipped",false)); return;
+                }
+                request("POST","/api/downloads",downloadRequest(video,audioFormat,embedMetadata));main.post(() -> {ui.showTab("downloads");ui.notice("Song queued · "+audioFormatLabel(audioFormat),false);refresh();});
+            }
             catch(Exception error) {main.post(() -> ui.notice(error.getMessage(),true));}
             finally {DownloadService.end();}
         });
@@ -189,11 +200,24 @@ public class MainActivity extends Activity {
     private void downloadPlaylist(String value) throws Exception {
         JSONObject selection=new JSONObject(value);JSONArray videoIds=selection.getJSONArray("video_ids");
         if(videoIds.length()==0){ui.notice("Choose at least one song",true);return;}
+        JSONArray selectedSources = new JSONArray();
+        for (int i=0;i<videoIds.length();i++) selectedSources.put(ui.sourceFor(videoIds.getString(i)));
         DownloadService.begin(this);ui.setBusy(true);ui.notice("Queueing selected songs…",false);
         requests.execute(()->{
             try {
-                JSONObject result=request("POST","/api/playlists/download",playlistDownloadRequest(selection.getString("preview_id"),videoIds,audioFormat,embedMetadata));
-                main.post(()->{ui.setBusy(false);ui.remember(result.optJSONArray("jobs"));ui.showTab("downloads");ui.notice(result.optInt("count")+" selected song"+(result.optInt("count")==1?"":"s")+" queued · "+audioFormatLabel(audioFormat),false);refresh();});
+                java.util.List<DeviceMusic.Song> phoneSongs=DeviceMusic.read(this);
+                JSONArray pending=new JSONArray();int skipped=0;
+                for(int i=0;i<videoIds.length();i++) {
+                    if(DeviceMusic.contains(phoneSongs,selectedSources.optJSONObject(i)))skipped++;
+                    else pending.put(videoIds.getString(i));
+                }
+                final int alreadyOnPhone=skipped;
+                if(pending.length()==0) {
+                    main.post(()->{ui.setBusy(false);ui.notice(alreadyOnPhone+" already on this phone · no download needed",false);});
+                    return;
+                }
+                JSONObject result=request("POST","/api/playlists/download",playlistDownloadRequest(selection.getString("preview_id"),pending,audioFormat,embedMetadata));
+                main.post(()->{ui.setBusy(false);ui.remember(result.optJSONArray("jobs"));ui.showTab("downloads");ui.notice(result.optInt("count")+" queued · "+alreadyOnPhone+" already on this phone",false);refresh();});
             }catch(Exception error){main.post(()->{ui.setBusy(false);ui.notice(error.getMessage(),true);});}
             finally{DownloadService.end();}
         });
@@ -211,6 +235,41 @@ public class MainActivity extends Activity {
         if("m4a".equals(value))return "M4A / AAC";
         if("webm".equals(value))return "Opus / WebM";
         return "Original audio";
+    }
+    private void showFirstRunSetup() {
+        if (getSharedPreferences("sonkip",MODE_PRIVATE).getBoolean("setup_complete",false)) return;
+        android.widget.LinearLayout form=new android.widget.LinearLayout(this);
+        form.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad=Math.round(20*getResources().getDisplayMetrics().density);
+        form.setPadding(pad,pad,pad,0);
+        android.widget.TextView quality=new android.widget.TextView(this);
+        quality.setText("Download quality / format");form.addView(quality);
+        android.widget.Spinner formats=new android.widget.Spinner(this);
+        String[] values={"m4a","webm","original"};
+        formats.setAdapter(new android.widget.ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,
+            new String[]{"M4A / AAC · compatible","Opus / WebM · smaller","Original audio · fastest"}));
+        formats.setSelection(Math.max(0,java.util.Arrays.asList(values).indexOf(audioFormat)));
+        form.addView(formats);
+        android.widget.CheckBox artwork=new android.widget.CheckBox(this);
+        artwork.setText("Download song details and artwork");artwork.setChecked(embedMetadata);form.addView(artwork);
+        new AlertDialog.Builder(this).setTitle("Set up Sonkip")
+            .setMessage("Choose how new music is saved. You can change these options later in Find.")
+            .setView(form).setCancelable(false)
+            .setPositiveButton("Continue",(dialog,which)->{
+                audioFormat=values[formats.getSelectedItemPosition()];embedMetadata=artwork.isChecked();
+                getSharedPreferences("sonkip",MODE_PRIVATE).edit().putString("audio_format",audioFormat)
+                    .putBoolean("embed_metadata",embedMetadata).apply();
+                ui.setAudioFormatLabel(audioFormatLabel(audioFormat));ui.setMetadataEnabled(embedMetadata);
+                new AlertDialog.Builder(this).setTitle("Music folder")
+                    .setMessage("Choose a folder if you want other music players to see your downloads. Sonkip keeps its own library copy. You can choose or change the folder later in Library.")
+                    .setPositiveButton("Choose folder",(d,w)->{
+                        getSharedPreferences("sonkip",MODE_PRIVATE).edit().putBoolean("setup_complete",true).apply();
+                        startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),45);
+                    })
+                    .setNegativeButton("Use Sonkip library",(d,w)->getSharedPreferences("sonkip",MODE_PRIVATE)
+                        .edit().putBoolean("setup_complete",true).apply()).setCancelable(false).show();
+            }).show();
     }
     private void audioFormatMenu() {
         String[] values={"original","m4a","webm"};

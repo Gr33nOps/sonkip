@@ -80,7 +80,7 @@
             "description": "A free, open-source music downloader that saves public songs, playlists and albums to a private local library with artwork and metadata.",
             "applicationCategory": "MultimediaApplication",
             "operatingSystem": ["Android", "Windows", "macOS", "Linux"],
-            "softwareVersion": "2.6.0",
+            "softwareVersion": "2.6.1",
             "isAccessibleForFree": true,
             "downloadUrl": "https://github.com/Gr33nOps/sonkip/releases/latest",
             "installUrl": "https://github.com/Gr33nOps/sonkip#quick-start",
@@ -186,6 +186,21 @@
       </div>
     </header>
     <main id="main-content">
+      <dialog id="setup-dialog" aria-labelledby="setup-title">
+        <h2 id="setup-title">Set up Sonkip</h2>
+        <p>Choose how new music is saved. You can change these options later.</p>
+        <label for="setup-format">Download quality / format</label>
+        <select id="setup-format">
+          <option value="m4a">M4A / AAC · compatible</option>
+          <option value="original">Original · fastest</option>
+          <option value="mp3">MP3 · most compatible</option>
+          <option value="opus">Opus · smaller</option>
+          <option value="flac">FLAC · large, no quality gain</option>
+        </select>
+        <label class="setup-check"><input id="setup-artwork" type="checkbox" checked /> Download song details and artwork</label>
+        <label class="setup-check"><input id="setup-folder" type="checkbox" /> Choose a music folder for other players</label>
+        <button id="setup-save" type="button">Start using Sonkip</button>
+      </dialog>
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy-block">
           <p class="eyebrow">

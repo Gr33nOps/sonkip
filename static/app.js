@@ -50,6 +50,26 @@
     );
   }
 
+  function showFirstRunSetup() {
+    if (localStorage.getItem("sonkip-setup-complete")) return;
+    $("setup-format").value = state.audioFormat;
+    $("setup-artwork").checked = state.embedMetadata;
+    $("setup-dialog").showModal();
+  }
+
+  function finishFirstRunSetup() {
+    state.audioFormat = $("setup-format").value;
+    state.embedMetadata = $("setup-artwork").checked;
+    $("audio-format").value = state.audioFormat;
+    $("embed-metadata").checked = state.embedMetadata;
+    localStorage.setItem("sonkip-audio-format", state.audioFormat);
+    localStorage.setItem("sonkip-embed-metadata", String(state.embedMetadata));
+    localStorage.setItem("sonkip-setup-complete", "true");
+    const chooseFolder = $("setup-folder").checked;
+    $("setup-dialog").close();
+    if (chooseFolder) $("music-folder").click();
+  }
+
   function formatTime(seconds) {
     if (seconds == null || !Number.isFinite(Number(seconds))) return "—";
     seconds = Math.max(0, Math.floor(Number(seconds)));
@@ -805,6 +825,7 @@
         : "Song details and artwork are off for new downloads.",
     );
   });
+  $("setup-save").addEventListener("click", finishFirstRunSetup);
 
   $("brand-btn").addEventListener("click", () => {
     switchTab("search");
@@ -1012,6 +1033,7 @@
   } else {
     Promise.all([loadLibrary(), loadAuthStatus()]).then(() => {
       render();
+      showFirstRunSetup();
       api("/api/jobs/resume-interrupted",{method:"POST"}).then(result=>{
         if(result.job_ids.length)loadDownloadHistory().catch(error=>showToast(error.message,true));
       }).catch(error=>showToast(error.message,true));

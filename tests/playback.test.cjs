@@ -114,6 +114,29 @@ test('a fresh browser defaults to compatible M4A but preserves an existing choic
   assert.equal(readDefault('mp3'),'mp3');
 });
 
+test('first-run setup saves format and artwork choices and offers the music folder', () => {
+  const code=source.slice(source.indexOf('  function showFirstRunSetup('),source.indexOf('  function renderTrackRow('));
+  const nodes=new Map([
+    ['setup-dialog',{showModal(){this.open=true;},close(){this.open=false;}}],
+    ['setup-format',{value:'opus'}], ['setup-artwork',{checked:false}],
+    ['setup-folder',{checked:true}], ['audio-format',{value:'m4a'}],
+    ['embed-metadata',{checked:true}], ['music-folder',{click(){this.clicked=true;}}],
+  ]);
+  const saved={};
+  const context={state:{audioFormat:'m4a',embedMetadata:true},$:id=>nodes.get(id),
+    localStorage:{getItem:()=>null,setItem:(key,value)=>saved[key]=value}};
+  vm.runInNewContext(code,context);
+  context.showFirstRunSetup();
+  assert.equal(nodes.get('setup-dialog').open,true);
+  nodes.get('setup-format').value='opus';
+  nodes.get('setup-artwork').checked=false;
+  context.finishFirstRunSetup();
+  assert.equal(saved['sonkip-audio-format'],'opus');
+  assert.equal(saved['sonkip-embed-metadata'],'false');
+  assert.equal(saved['sonkip-setup-complete'],'true');
+  assert.equal(nodes.get('music-folder').clicked,true);
+});
+
 test('opening download history twice never creates duplicate pollers', () => {
   let timers=0;
   const code=source.slice(source.indexOf('  function pollJob('),source.indexOf('  function triggerBrowserDownload('));

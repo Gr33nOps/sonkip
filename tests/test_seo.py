@@ -109,7 +109,7 @@ def test_homepage_schema_describes_the_free_cross_platform_application_and_faq()
     assert app["applicationCategory"] == "MultimediaApplication"
     assert set(app["operatingSystem"]) == {"Android", "Windows", "macOS", "Linux"}
     assert app["offers"] == {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
-    assert app["softwareVersion"] == "2.6.0"
+    assert app["softwareVersion"] == "2.6.1"
     assert len(app["featureList"]) >= 5
     assert len(faq["mainEntity"]) >= 5
     assert all(item["@type"] == "Question" for item in faq["mainEntity"])

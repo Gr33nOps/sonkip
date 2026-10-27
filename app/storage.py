@@ -116,6 +116,10 @@ class MusicStore:
             db.execute('INSERT OR REPLACE INTO download_jobs (id, payload) VALUES (?, ?)',
                        (job['id'], json.dumps(job)))
 
+    def delete_job(self, job_id: str) -> None:
+        with self._connect() as db:
+            db.execute('DELETE FROM download_jobs WHERE id = ?', (job_id,))
+
     def export_backup(self, destination: Path, playlists=None) -> None:
         tracks = self.list_tracks()
         with zipfile.ZipFile(destination, 'w', compression=zipfile.ZIP_STORED, allowZip64=True) as archive:

@@ -81,6 +81,46 @@ def test_android_m4a_fallback_extracts_audio_from_mp4(monkeypatch, tmp_path):
         manager.pool.shutdown(wait=True)
 
 
+def test_android_m4a_without_aac_saves_available_original_audio(monkeypatch, tmp_path):
+    import sys
+    import time
+    import types
+    from pathlib import Path
+    import app.engine as engine
+    from app.storage import MusicStore
+
+    class Browser:
+        @staticmethod
+        def awaitReady(): pass
+
+    class Extractor:
+        def __init__(self, options): self.options = options
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def extract_info(self, url, download):
+            if 'ext=m4a' in self.options['format']:
+                raise RuntimeError('Requested format is not available')
+            Path(self.options['outtmpl'].replace('%(ext)s', 'webm')).write_bytes(b'opus-audio')
+            return {'title': 'Song', 'artist': 'Artist', 'duration': 200,
+                    'requested_downloads': [{'acodec': 'opus'}]}
+
+    monkeypatch.setenv('SONKIP_ANDROID_TOKENS', '1')
+    monkeypatch.setitem(sys.modules, 'java', types.SimpleNamespace(jclass=lambda _: Browser))
+    monkeypatch.setattr(engine, 'YoutubeDL', Extractor)
+    manager = engine.DownloadManager(MusicStore(tmp_path))
+    try:
+        job_id = manager.start('K3Qzzggn--s', 'm4a')
+        for _ in range(100):
+            job = manager.get_job(job_id)
+            if job['status'] in ('complete', 'error'): break
+            time.sleep(.01)
+        assert job['status'] == 'complete', job
+        assert job['format_fallback'] == 'webm'
+        assert manager.store.get_track(job_id)['extension'] == 'webm'
+    finally:
+        manager.pool.shutdown(wait=True)
+
+
 def test_android_browser_startup_failure_finishes_job_with_retryable_error(monkeypatch, tmp_path):
     import sys
     import types

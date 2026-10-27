@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.1
+
+- Add first-run format, artwork, and Music folder setup on Android and desktop.
+- Skip matching tracks already in the phone's indexed audio library when audio access is granted, and reuse Sonkip tracks across format choices.
+- Use the site's Manrope and DM Mono fonts in the Android interface.
+- Favor artist uploads in search and reject lyrics-only uploads during playlist matching.
+- Save available original audio on Android when an M4A stream is unavailable, and label the fallback format in Downloads.
+- Remove stale failed download entries when the song is already saved.
+
 ## 2.6.0
 
 - Add a review-first playlist and album flow on Android and desktop: Sonkip finds every match, selects them by default, and waits for an explicit Save action before queueing downloads.

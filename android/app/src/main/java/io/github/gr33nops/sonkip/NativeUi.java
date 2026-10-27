@@ -28,6 +28,7 @@ public class NativeUi extends LinearLayout {
             MUTED = Color.rgb(100,98,90), ORANGE = Color.rgb(255,80,0), LIME = Color.rgb(220,255,0);
     private static final ExecutorService ARTWORK = Executors.newFixedThreadPool(3);
     private final Actions actions;
+    private final Typeface bodyFace, boldFace, monoFace;
     private final LinearLayout content, navigation, player;
     private final TextView message, playingTitle, playingTime;
     private final Button toggle;
@@ -45,9 +46,23 @@ public class NativeUi extends LinearLayout {
     private boolean metadataEnabled=true;
     private boolean busy, seeking;
 
+    public JSONObject sourceFor(String videoId) {
+        for (JSONArray group : new JSONArray[]{results, playlistPreview == null ? null : playlistPreview.optJSONArray("entries")}) {
+            if (group == null) continue;
+            for (int i = 0; i < group.length(); i++) {
+                JSONObject item = group.optJSONObject(i);
+                if (item != null && videoId.equals(item.optString("video_id"))) return item;
+            }
+        }
+        return null;
+    }
+
     public NativeUi(Context context, Actions actions) {
         super(context);
         this.actions = actions;
+        bodyFace = Typeface.createFromAsset(context.getAssets(), "fonts/manrope-500.ttf");
+        boldFace = Typeface.createFromAsset(context.getAssets(), "fonts/manrope-700.ttf");
+        monoFace = Typeface.createFromAsset(context.getAssets(), "fonts/dm-mono-400.ttf");
         setOrientation(VERTICAL);
         setBackgroundColor(PAPER);
         LinearLayout brand = row();
@@ -55,7 +70,7 @@ public class NativeUi extends LinearLayout {
         TextView logo = text("sonkip.", 29, INK, true);
         brand.addView(logo, new LayoutParams(0, -2, 1));
         TextView local = text("LOCAL ONLY", 10, MUTED, true);
-        local.setTypeface(Typeface.MONOSPACE);
+        local.setTypeface(monoFace);
         brand.addView(local);
         addView(brand);
         message = text("Starting your local library…", 12, MUTED, false);
@@ -116,7 +131,7 @@ public class NativeUi extends LinearLayout {
     private LinearLayout row() { LinearLayout v = new LinearLayout(getContext()); v.setGravity(Gravity.CENTER_VERTICAL); return v; }
     private TextView text(String value, int size, int color, boolean bold) {
         TextView view = new TextView(getContext()); view.setText(value); view.setTextSize(size); view.setTextColor(color);
-        if (bold) view.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        view.setTypeface(bold ? boldFace : bodyFace);
         return view;
     }
     private GradientDrawable background(int color, int radius) {
@@ -125,7 +140,7 @@ public class NativeUi extends LinearLayout {
     private Button button(String title, String tag, View.OnClickListener click) {
         Button b = new Button(getContext()); b.setText(title); b.setTag(tag); b.setAllCaps(false);
         b.setTextSize(13); b.setMinHeight(dp(48)); b.setMinimumHeight(dp(48));
-        b.setTextColor(INK); b.setTypeface(Typeface.MONOSPACE); b.setLetterSpacing(.04f);
+        b.setTextColor(INK); b.setTypeface(monoFace); b.setLetterSpacing(.04f);
         GradientDrawable shape=background(PAPER,2); shape.setStroke(dp(1),INK);
         b.setBackground(new android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x22000000),shape,null));
         b.setOnClickListener(click); return b;
@@ -206,7 +221,7 @@ public class NativeUi extends LinearLayout {
     }
     private void renderFind() {
         TextView eyebrow=text("YOUR MUSIC, ON YOUR DEVICE",10,MUTED,false);
-        eyebrow.setTypeface(Typeface.MONOSPACE); content.addView(eyebrow); gap(16);
+        eyebrow.setTypeface(monoFace); content.addView(eyebrow); gap(16);
         LinearLayout hero=row();
         TextView headline=text("FIND IT.\nSAVE IT.\nPLAY IT.",42,INK,true);
         headline.setTag("brand-headline"); headline.setLetterSpacing(-.065f);
@@ -232,6 +247,7 @@ public class NativeUi extends LinearLayout {
         LinearLayout box = card();
         TextView label = text("SONGS & PLAYLISTS",11,ORANGE,true); box.addView(label);
         EditText input = new EditText(getContext()); input.setTag("query"); input.setText(query);
+        input.setTypeface(bodyFace);
         input.setHint("Song, artist, or playlist link"); input.setTextSize(16); input.setSingleLine(true);
         input.setInputType(android.text.InputType.TYPE_CLASS_TEXT); input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         input.setContentDescription("Search songs or paste a playlist link");
@@ -271,6 +287,7 @@ public class NativeUi extends LinearLayout {
             String id=item.optString("video_id");LinearLayout box=card();
             addArtwork(box,item,id);
             CheckBox selected=new CheckBox(getContext());selected.setTag("playlist-select-"+id);selected.setChecked(selectedPlaylistTracks.contains(id));
+            selected.setTypeface(bodyFace);
             selected.setText(item.optString("title","Untitled")+"\n"+metadataLine(item));
             selected.setOnCheckedChangeListener((button,checked)->{if(checked)selectedPlaylistTracks.add(id);else selectedPlaylistTracks.remove(id);updatePlaylistSelectionControls();});
             box.addView(selected,new LayoutParams(-1,-2));
@@ -410,6 +427,8 @@ public class NativeUi extends LinearLayout {
             String id=job.optString("id"), video=job.optString("video_id"), status=job.optString("status");
             LinearLayout box=card(); box.addView(text(titles.getOrDefault(video,job.optString("title",video)),16,INK,true));
             String label = status.equals("complete") ? "Saved · ready to play" : status.equals("starting") ? "Preparing audio…" : status.equals("processing") ? "Finishing…" : status.equals("error") ? "Couldn't save this song" : status.equals("queued") ? "Waiting in queue" : "Downloading · "+job.optInt("percent")+"%";
+            if(status.equals("complete") && !job.optString("format_fallback").isEmpty())
+                label = "Saved as "+job.optString("format_fallback").toUpperCase(Locale.ROOT)+" · M4A unavailable";
             box.addView(text(label,12,status.equals("error")?ORANGE:MUTED,false));
             if(status.equals("error")) {
                 TextView error=text(job.optString("error","Please try again."),12,MUTED,false); error.setTag("error-"+id); box.addView(error);

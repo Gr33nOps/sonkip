@@ -1443,6 +1443,15 @@ html[data-local-app="true"] .pages-only {
  #folder-dialog::backdrop { background: #0009; }
  #folder-dialog input { display: block; width: 100%; margin: 12px 0; padding: 12px; }
  #folder-dialog button { min-height: 44px; padding: 10px 14px; margin: 6px 4px 0 0; cursor: pointer; }
+ #setup-dialog { max-width: 480px; width: calc(100% - 32px); max-height: calc(100% - 32px); overflow: auto; margin: auto; padding: 26px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); box-shadow: 8px 8px 0 var(--orange); font-family: var(--sans); }
+ #setup-dialog::backdrop { background: #000a; }
+ #setup-dialog h2 { font-size: 30px; margin-bottom: 8px; }
+ #setup-dialog p { margin-bottom: 18px; }
+ #setup-dialog label { display: block; margin: 14px 0 8px; }
+ #setup-dialog select { display: block; width: 100%; min-height: 48px; padding: 10px; border: 1px solid var(--ink); background: var(--paper); font: inherit; }
+ #setup-dialog .setup-check { display: flex; align-items: center; gap: 10px; }
+ #setup-dialog .setup-check input { width: 18px; height: 18px; flex: none; }
+ #setup-dialog button { display: block; width: 100%; min-height: 48px; margin-top: 22px; background: var(--orange); color: var(--ink); font: 500 14px var(--mono); cursor: pointer; }
 
 /* Phone layout: preserve the editorial desktop design while giving each
    control a deliberate, touch-friendly place on narrow screens. */

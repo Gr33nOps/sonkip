@@ -87,6 +87,71 @@ def test_search_ranking_prefers_official_exact_match_and_hides_weak_results():
     assert results[0]['is_best_match'] is True
 
 
+def test_search_prefers_artist_audio_over_lyrics_upload():
+    items = [
+        {'id': 'abcdefghijk', 'title': 'Artist - Song (Lyrics)', 'uploader': 'Lyrics Vault', 'view_count': 9000000},
+        {'id': 'NMRhx71bGo4', 'title': 'Artist - Song (Official Audio)', 'uploader': 'Artist - Topic', 'view_count': 10000},
+    ]
+    results = engine._rank_search_results('Artist Song', items)
+    assert results[0]['video_id'] == 'NMRhx71bGo4'
+
+
+def test_search_does_not_treat_verified_lyrics_as_the_official_recording():
+    items = [
+        {'id': 'abcdefghijk', 'title': 'Artist - Song (Lyrics)', 'uploader': 'Lyrics Vault',
+         'channel_is_verified': True, 'view_count': 9000000},
+        {'id': 'NMRhx71bGo4', 'title': 'Artist - Song (Audio)', 'uploader': 'Artist - Topic',
+         'view_count': 10000},
+    ]
+    assert engine._rank_search_results('Artist Song', items)[0]['video_id'] == 'NMRhx71bGo4'
+
+
+def test_official_words_in_a_reupload_title_do_not_beat_an_artist_topic_channel():
+    items = [
+        {'id': 'abcdefghijk', 'title': 'Artist - Song (Official Audio)', 'uploader': 'Music Reuploads',
+         'view_count': 9000000},
+        {'id': 'NMRhx71bGo4', 'title': 'Song', 'artist': 'Artist', 'uploader': 'Artist - Topic',
+         'view_count': 1000},
+    ]
+    assert engine._rank_search_results('Artist Song', items)[0]['video_id'] == 'NMRhx71bGo4'
+
+
+def test_verified_reupload_with_another_artist_in_title_is_not_official():
+    result = engine._search_result({
+        'id': 'abcdefghijk', 'title': 'Artist - Song (Official Audio)',
+        'uploader': 'Music Archive', 'channel_is_verified': True,
+    })
+    assert result['source_quality'] == 'community'
+
+
+def test_search_does_not_select_a_making_of_video_as_the_song():
+    items = [
+        {'id': 'abcdefghijk', 'title': "The Making of 'Song' | Footnotes", 'artist': 'Artist',
+         'uploader': 'Artist', 'channel_is_verified': True, 'view_count': 10000000},
+        {'id': 'NMRhx71bGo4', 'title': 'Song', 'artist': 'Artist',
+         'uploader': 'Artist - Topic', 'view_count': 1000},
+    ]
+    assert engine._rank_search_results('Artist Song', items)[0]['video_id'] == 'NMRhx71bGo4'
+
+
+def test_import_match_prefers_artist_audio_over_lyrics_upload(monkeypatch):
+    monkeypatch.setattr(engine, 'search_music', lambda *a: [
+        {'video_id': 'abcdefghijk', 'title': 'Song (Lyrics)', 'artist': 'Artist', 'duration': 200},
+        {'video_id': 'NMRhx71bGo4', 'title': 'Song (Official Audio)', 'artist': 'Artist', 'duration': 200,
+         'source_quality': 'official'},
+    ])
+    result = engine._match_track({'title': 'Song', 'artist': 'Artist', 'duration': 200}, None)
+    assert result['video_id'] == 'NMRhx71bGo4'
+
+
+def test_import_does_not_auto_match_a_lyrics_only_upload(monkeypatch):
+    monkeypatch.setattr(engine, 'search_music', lambda *a: [
+        {'video_id': 'abcdefghijk', 'title': 'Song (Lyrics)', 'artist': 'Artist',
+         'duration': 200, 'is_lyrics_upload': True},
+    ])
+    assert engine._match_track({'title': 'Song', 'artist': 'Artist', 'duration': 200}, None) is None
+
+
 def test_metadata_normalization_keeps_release_identity_consistent_without_inventing_album():
     first = engine.resolve_music_metadata({
         'track': '  First\u00a0Song ', 'artist': 'Artist - Topic', 'album': '  Night   Drive ',
