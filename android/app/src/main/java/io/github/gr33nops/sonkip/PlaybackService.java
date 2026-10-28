@@ -24,6 +24,7 @@ public class PlaybackService extends Service {
     private AudioFocusRequest focus;
     private boolean prepared, resumeOnFocus;
     private String repeatMode="off";
+    private long sleepUntil;
     private final Runnable sleepStop=()->pause();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable idleStop = () -> { if (!isPlaying()) stopSelf(); };
@@ -124,7 +125,9 @@ public class PlaybackService extends Service {
     void next(){JSONObject following=queue==null?null:queue.next();if(following==null)pause();else open(following);}
     void previous(){if(position()>3000){seek(0);return;}if(queue!=null)open(queue.previous());else seek(0);}
     void repeat(String mode){if(!java.util.Arrays.asList("off","one","all").contains(mode))throw new IllegalArgumentException("Unknown repeat mode");repeatMode=mode;if(queue!=null)queue.setRepeat(mode);publish();}
-    void sleepAfter(int minutes){if(minutes<0 || minutes>180)throw new IllegalArgumentException("Choose a timer up to three hours");handler.removeCallbacks(sleepStop);if(minutes>0)handler.postDelayed(sleepStop,minutes*60000L);}
+    String repeatMode(){return repeatMode;}
+    void sleepAfter(int minutes){if(minutes<0 || minutes>180)throw new IllegalArgumentException("Choose a timer up to three hours");handler.removeCallbacks(sleepStop);sleepUntil=minutes==0?0:android.os.SystemClock.elapsedRealtime()+minutes*60000L;if(minutes>0)handler.postDelayed(sleepStop,minutes*60000L);}
+    int sleepRemainingMinutes(){return sleepUntil==0?0:(int)Math.max(0,(sleepUntil-android.os.SystemClock.elapsedRealtime()+59999L)/60000L);}
     JSONArray upcoming(){return queue==null?new JSONArray():queue.upcoming();}
     void moveNext(int position){if(queue!=null)queue.moveNext(position);publish();}
     void removeUpcoming(int position){if(queue!=null)queue.removeUpcoming(position);publish();}

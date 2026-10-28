@@ -23,7 +23,7 @@ public class NativeUiTest {
         NativeUi ui = screen();
         TextView title = ui.findViewWithTag("brand-headline");
         assertNotNull(title);
-        assertEquals("FIND IT.\nSAVE IT.\nPLAY IT.", title.getText().toString());
+        assertEquals("FIND IT.  SAVE IT.  PLAY IT.", title.getText().toString());
         assertNotNull(ui.findViewWithTag("query"));
         assertNotNull(ui.findViewWithTag("search"));
     }
@@ -70,6 +70,10 @@ public class NativeUiTest {
     @Test public void playerControlTogglesWithoutLosingLibraryNavigation() {
         NativeUi ui = screen();
         ui.playback("Let It Happen", true, 10000, 468000);
+        android.view.View details=(android.view.View)ui.findViewWithTag("player-options").getParent();
+        assertEquals(android.view.View.GONE,details.getVisibility());
+        ui.findViewWithTag("player-expand").performClick();
+        assertEquals(android.view.View.VISIBLE,details.getVisibility());
         TextView toggle = ui.findViewWithTag("player-toggle");
         assertEquals("Pause", toggle.getText().toString());
         toggle.performClick();
@@ -131,6 +135,13 @@ public class NativeUiTest {
         assertNotNull(metadata);
         assertEquals("Artist  ·  The Album  ·  2024  ·  2:05", metadata.getText().toString());
     }
+    @Test public void nullLikeMetadataIsOmittedFromSongRows() throws Exception {
+        NativeUi ui = screen();
+        ui.setResults(new JSONArray("[{\"video_id\":\"dQw4w9WgXcQ\",\"title\":\"Song\",\"artist\":\"Artist\",\"album\":\"null\",\"release_date\":\"none\",\"duration\":125}]"));
+
+        TextView metadata = ui.findViewWithTag("metadata-dQw4w9WgXcQ");
+        assertEquals("Artist  ·  2:05", metadata.getText().toString());
+    }
     @Test public void artworkLoaderOnlyAcceptsKnownHttpsImageHosts() {
         assertTrue(NativeUi.isTrustedArtworkUrl("https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"));
         assertTrue(NativeUi.isTrustedArtworkUrl("https://i.scdn.co/image/example"));
@@ -145,5 +156,21 @@ public class NativeUiTest {
         ui.setBusy(true);
 
         assertFalse(ui.findViewWithTag("playlist-save").isEnabled());
+    }
+    @Test public void recentDownloadsKeepNewestJobAboveOlderJobs() throws Exception {
+        NativeUi ui = screen();
+        // The jobs endpoint supplies newest first; the visible list must preserve that order.
+        ui.setJobs(new JSONArray("[{\"id\":\"new\",\"video_id\":\"new-video\",\"title\":\"New download\",\"status\":\"complete\"},"
+                + "{\"id\":\"old\",\"video_id\":\"old-video\",\"title\":\"Old download\",\"status\":\"complete\"}]"));
+        ui.showTab("downloads");
+        int width = android.view.View.MeasureSpec.makeMeasureSpec(1080, android.view.View.MeasureSpec.EXACTLY);
+        int height = android.view.View.MeasureSpec.makeMeasureSpec(2400, android.view.View.MeasureSpec.EXACTLY);
+        ui.measure(width, height); ui.layout(0, 0, 1080, 2400);
+        android.graphics.Rect newest = new android.graphics.Rect(), oldest = new android.graphics.Rect();
+        ui.findViewWithTag("play-job-new").getDrawingRect(newest);
+        ui.offsetDescendantRectToMyCoords(ui.findViewWithTag("play-job-new"), newest);
+        ui.findViewWithTag("play-job-old").getDrawingRect(oldest);
+        ui.offsetDescendantRectToMyCoords(ui.findViewWithTag("play-job-old"), oldest);
+        assertTrue("New downloads should be visible before older history", newest.top < oldest.top);
     }
 }

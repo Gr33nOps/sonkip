@@ -4,7 +4,7 @@
 
 Sonkip is a free, open-source music downloader and private local library for Android, Windows, macOS, and Linux. Save public songs, playlists, and albums on your own device with available artwork and music metadata. Sonkip has no accounts, ads, analytics, or hosted cloud library.
 
-[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.6.1/Sonkip-2.6.1.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.6.1) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.7.0/Sonkip-2.7.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.7.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
 **Android 7+ · Windows · macOS · Linux**
 

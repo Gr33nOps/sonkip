@@ -150,9 +150,9 @@ public class MainActivity extends Activity {
                 case "toggle": if(PlaybackService.current!=null) {PlaybackService.current.toggle();updatePlayer();} break;
                 case "seek": if(PlaybackService.current!=null)PlaybackService.current.seek(Integer.parseInt(value)); break;
                 case "export": export(value); break;
-                case "more": new AlertDialog.Builder(this).setTitle(track(value).optString("title"))
-                    .setItems(new String[]{"Add to playlist","Remove from library"},(d,which)->playlistAction(()->{
-                        if(which==0)showPlaylists(value);else confirmDelete(value);
+                case "more": new BrandDialog(this).setTitle(track(value).optString("title"))
+                    .setItems(new String[]{"Add to playlist","Export audio file","Remove from library"},(d,which)->playlistAction(()->{
+                        if(which==0)showPlaylists(value);else if(which==1)export(value);else confirmDelete(value);
                     })).show();break;
             }
         } catch(Exception error) {ui.notice(error.getMessage(),true);}
@@ -243,7 +243,7 @@ public class MainActivity extends Activity {
         int pad=Math.round(20*getResources().getDisplayMetrics().density);
         form.setPadding(pad,pad,pad,0);
         android.widget.TextView quality=new android.widget.TextView(this);
-        quality.setText("Download quality / format");form.addView(quality);
+        quality.setText(R.string.setup_quality);form.addView(quality);
         android.widget.Spinner formats=new android.widget.Spinner(this);
         String[] values={"m4a","webm","original"};
         formats.setAdapter(new android.widget.ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,
@@ -251,8 +251,8 @@ public class MainActivity extends Activity {
         formats.setSelection(Math.max(0,java.util.Arrays.asList(values).indexOf(audioFormat)));
         form.addView(formats);
         android.widget.CheckBox artwork=new android.widget.CheckBox(this);
-        artwork.setText("Download song details and artwork");artwork.setChecked(embedMetadata);form.addView(artwork);
-        new AlertDialog.Builder(this).setTitle("Set up Sonkip")
+        artwork.setText(R.string.setup_artwork);artwork.setChecked(embedMetadata);form.addView(artwork);
+        new BrandDialog(this).setTitle("Set up Sonkip")
             .setMessage("Choose how new music is saved. You can change these options later in Find.")
             .setView(form).setCancelable(false)
             .setPositiveButton("Continue",(dialog,which)->{
@@ -260,7 +260,7 @@ public class MainActivity extends Activity {
                 getSharedPreferences("sonkip",MODE_PRIVATE).edit().putString("audio_format",audioFormat)
                     .putBoolean("embed_metadata",embedMetadata).apply();
                 ui.setAudioFormatLabel(audioFormatLabel(audioFormat));ui.setMetadataEnabled(embedMetadata);
-                new AlertDialog.Builder(this).setTitle("Music folder")
+                new BrandDialog(this).setTitle("Music folder")
                     .setMessage("Choose a folder if you want other music players to see your downloads. Sonkip keeps its own library copy. You can choose or change the folder later in Library.")
                     .setPositiveButton("Choose folder",(d,w)->{
                         getSharedPreferences("sonkip",MODE_PRIVATE).edit().putBoolean("setup_complete",true).apply();
@@ -275,7 +275,7 @@ public class MainActivity extends Activity {
         String[] values={"original","m4a","webm"};
         String[] labels={"Original audio · fastest","M4A / AAC · compatible","Opus / WebM · smaller"};
         int selected=java.util.Arrays.asList(values).indexOf(audioFormat);
-        new AlertDialog.Builder(this).setTitle("Save new downloads as")
+        new BrandDialog(this).setTitle("Save new downloads as")
             .setSingleChoiceItems(labels,Math.max(0,selected),(dialog,which)->{
                 audioFormat=values[which];
                 getSharedPreferences("sonkip",MODE_PRIVATE).edit().putString("audio_format",audioFormat).apply();
@@ -300,31 +300,39 @@ public class MainActivity extends Activity {
     }
     private void filterLibrary() {
         android.widget.LinearLayout form=new android.widget.LinearLayout(this);form.setOrientation(android.widget.LinearLayout.VERTICAL);
-        android.widget.EditText query=new android.widget.EditText(this);query.setHint("Song or artist");query.setSingleLine(true);form.addView(query);
+        int inset=Math.round(24*getResources().getDisplayMetrics().density);form.setPadding(inset,0,inset,0);
+        android.widget.EditText query=new android.widget.EditText(this);query.setHint("Song or artist");query.setSingleLine(true);query.setText(ui.libraryQuery());
+        query.setContentDescription("Filter saved songs by title or artist");form.addView(query);
+        android.widget.TextView sortLabel=new android.widget.TextView(this);sortLabel.setText(R.string.sort_by);sortLabel.setTextSize(13);form.addView(sortLabel);
         android.widget.Spinner sort=new android.widget.Spinner(this);
-        sort.setAdapter(new android.widget.ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Newest downloads","Oldest downloads","Song title","Artist"}));form.addView(sort);
-        new AlertDialog.Builder(this).setTitle("Search your library").setView(form)
+        sort.setContentDescription("Sort saved songs by");
+        sort.setAdapter(new android.widget.ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Newest downloads","Oldest downloads","Song title","Artist"}));
+        sort.setSelection(Math.max(0,java.util.Arrays.asList("newest","oldest","title","artist").indexOf(ui.librarySort())));form.addView(sort);
+        new BrandDialog(this).setTitle("Search your library").setView(form)
             .setPositiveButton("Apply",(d,w)->ui.filterLibrary(query.getText().toString(),new String[]{"newest","oldest","title","artist"}[sort.getSelectedItemPosition()]))
             .setNeutralButton("Clear",(d,w)->ui.filterLibrary("","newest")).setNegativeButton("Cancel",null).show();
     }
     private void playerOptions() {
         PlaybackService service=PlaybackService.current;if(service==null)return;
-        new AlertDialog.Builder(this).setTitle("Playback").setItems(new String[]{"Upcoming songs","Repeat","Sleep timer"},(d,which)->{
+        int remaining=service.sleepRemainingMinutes();
+        new BrandDialog(this).setTitle("Playback").setItems(new String[]{"Upcoming songs","Repeat · "+service.repeatMode(),"Sleep timer · "+(remaining==0?"off":remaining+" min left")},(d,which)->{
             if(which==0)showUpcoming(service);
-            else if(which==1)new AlertDialog.Builder(this).setTitle("Repeat").setItems(new String[]{"Off","One song","All songs"},(r,index)->{
+            else if(which==1)new BrandDialog(this).setTitle("Repeat").setSingleChoiceItems(new String[]{"Off","One song","All songs"},java.util.Arrays.asList("off","one","all").indexOf(service.repeatMode()),(r,index)->{
                 service.repeat(new String[]{"off","one","all"}[index]);ui.notice("Repeat: "+new String[]{"off","one song","all songs"}[index],false);
+                r.dismiss();
             }).show();
-            else new AlertDialog.Builder(this).setTitle("Sleep timer").setItems(new String[]{"Off","15 minutes","30 minutes","60 minutes"},(r,index)->{
+            else new BrandDialog(this).setTitle(remaining==0?"Sleep timer":"Sleep timer · "+remaining+" min left").setSingleChoiceItems(new String[]{"Off","15 minutes","30 minutes","60 minutes"},remaining==0?0:remaining==15?1:remaining==30?2:remaining==60?3:-1,(r,index)->{
                 service.sleepAfter(new int[]{0,15,30,60}[index]);ui.notice(index==0?"Sleep timer off":"Music will pause in "+new int[]{0,15,30,60}[index]+" minutes",false);
+                r.dismiss();
             }).show();
         }).show();
     }
     private void backupMenu() {
         if(backupBusy){ui.notice("A backup operation is already running.",false);return;}
-        new AlertDialog.Builder(this).setTitle("Backup & restore").setItems(new String[]{"Export music and playlists","Restore a Sonkip ZIP"},(d,which)->{
+        new BrandDialog(this).setTitle("Backup & restore").setItems(new String[]{"Export music and playlists","Restore a Sonkip ZIP"},(d,which)->{
             Intent picker=new Intent(which==0?Intent.ACTION_CREATE_DOCUMENT:Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip");
             if(which==0){picker.putExtra(Intent.EXTRA_TITLE,"Sonkip-backup.zip");startActivityForResult(picker,43);}
-            else new AlertDialog.Builder(this).setTitle("Restore backup?").setMessage("Adds missing songs and playlists. Existing songs are kept. Make sure you have space for the ZIP and its audio files.")
+            else new BrandDialog(this).setTitle("Restore backup?").setMessage("Adds missing songs and playlists. Existing songs are kept. Make sure you have space for the ZIP and its audio files.")
                 .setPositiveButton("Choose ZIP",(r,w)->startActivityForResult(picker,44)).setNegativeButton("Cancel",null).show();
         }).show();
     }
@@ -363,9 +371,9 @@ public class MainActivity extends Activity {
         JSONArray songs=service.upcoming();
         if(songs.length()==0){ui.notice("No songs after this one. Play a library or playlist to build a queue.",false);return;}
         String[] labels=new String[songs.length()];for(int i=0;i<labels.length;i++)labels[i]=songs.optJSONObject(i).optString("title","Untitled");
-        new AlertDialog.Builder(this).setTitle("Upcoming songs").setItems(labels,(d,index)->{
+        new BrandDialog(this).setTitle("Upcoming songs").setItems(labels,(d,index)->{
             String id=songs.optJSONObject(index).optString("id");
-            new AlertDialog.Builder(this).setTitle(labels[index]).setItems(new String[]{"Play next","Remove from queue"},(r,choice)->{
+            new BrandDialog(this).setTitle(labels[index]).setItems(new String[]{"Play next","Remove from queue"},(r,choice)->{
                 // Playback can advance while the dialog is open. Resolve the ID again.
                 JSONArray current=service.upcoming();for(int i=0;i<current.length();i++)if(current.optJSONObject(i).optString("id").equals(id)){
                     if(choice==0)service.moveNext(i);else service.removeUpcoming(i);break;
@@ -377,12 +385,18 @@ public class MainActivity extends Activity {
     private void musicFolderMenu() {
         String folder=MusicFolder.prefs(this).getString("tree","");
         String error=MusicFolder.prefs(this).getString("error","");
-        new AlertDialog.Builder(this).setTitle("Music folder")
-            .setMessage((folder.isEmpty()?"No folder selected.":"Selected: "+Uri.decode(folder))+"\n\nExisting and future songs are copied here for other players. Sonkip keeps its internal copy too. Use a local Music folder; a cloud provider may upload files.\n\n"+error)
-            .setPositiveButton("Choose folder",(d,w)->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),45))
-            .setNeutralButton("Copy / retry",(d,w)->syncMusicFolder())
-            .setNegativeButton("Stop copying",(d,w)->{MusicFolder.prefs(this).edit().remove("tree").remove("error").apply();ui.notice("Automatic copies stopped. Existing files are kept.",false);}).show();
+        String segment=folder.isEmpty()?null:Uri.parse(folder).getLastPathSegment();
+        String folderName=segment==null?"Selected folder":Uri.decode(segment);
+        if(folderName.startsWith("primary:"))folderName="Internal storage / "+folderName.substring("primary:".length());
+        String[] options=folder.isEmpty()?new String[]{"Choose a Music folder"}:new String[]{"Change folder · "+folderName,"Copy saved songs now","Stop automatic copies"};
+        new BrandDialog(this).setTitle("Music folder")
+            .setItems(options,(d,which)->{
+                if(which==0)startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),45);
+                else if(which==1)syncMusicFolder();
+                else {MusicFolder.prefs(this).edit().remove("tree").remove("error").apply();ui.notice("Automatic copies stopped. Existing files are kept.",false);}
+            }).setNegativeButton("Close",null).show();
+        if(!error.isEmpty())ui.notice(error,true);
     }
     private void syncMusicFolder() {
         DownloadService.begin(this);ui.notice("Copying music to your folder…",false);
@@ -424,7 +438,7 @@ public class MainActivity extends Activity {
     private void showPlaylists(String addSong)throws Exception {
         JSONArray lists=playlists.list();String[] names=new String[lists.length()+1];names[0]="+ Create playlist";
         for(int i=0;i<lists.length();i++)names[i+1]=lists.getJSONObject(i).getString("name")+" · "+playlists.resolve(lists.getJSONObject(i).getString("id"),tracks).length()+" songs";
-        new AlertDialog.Builder(this).setTitle(addSong==null?"My playlists":"Add to playlist").setItems(names,(d,which)->playlistAction(()->{
+        new BrandDialog(this).setTitle(addSong==null?"My playlists":"Add to playlist").setItems(names,(d,which)->playlistAction(()->{
             if(which==0){namePlaylist(null,addSong);return;}
             JSONObject list=lists.getJSONObject(which-1);String id=list.getString("id");
             if(addSong!=null){playlists.save(id,list.getString("name"),list.getJSONArray("tracks").put(addSong));ui.notice("Added to "+list.getString("name"),false);}
@@ -435,7 +449,10 @@ public class MainActivity extends Activity {
         android.widget.EditText name=new android.widget.EditText(this);name.setSingleLine(true);name.setHint("Playlist name");
         name.setContentDescription("Playlist name");
         if(id!=null)name.setText(playlists.get(id).getString("name"));
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(id==null?"Create playlist":"Rename playlist").setView(name)
+        android.widget.FrameLayout form=new android.widget.FrameLayout(this);
+        int inset=Math.round(24*getResources().getDisplayMetrics().density);
+        form.setPadding(inset,0,inset,0);form.addView(name);
+        AlertDialog dialog=new BrandDialog(this).setTitle(id==null?"Create playlist":"Rename playlist").setView(form)
             .setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
         dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
             try {
@@ -447,28 +464,67 @@ public class MainActivity extends Activity {
     }
     private void openPlaylist(String id)throws Exception {
         JSONObject list=playlists.get(id);JSONArray songs=playlists.resolve(id,tracks);
-        new AlertDialog.Builder(this).setTitle(list.getString("name")).setMessage(songs.length()+" saved songs\nPlaylist order follows the order you added songs.")
+        AlertDialog dialog=new BrandDialog(this).setTitle(list.getString("name")).setMessage(songs.length()+" saved songs\nPlaylist order follows the order you added songs.")
             .setPositiveButton("Play",(d,w)->playlistAction(()->PlaybackService.playQueue(this,songs,false,false)))
             .setNeutralButton("Shuffle",(d,w)->playlistAction(()->PlaybackService.playQueue(this,songs,true,false)))
-            .setNegativeButton("Edit",(d,w)->new AlertDialog.Builder(this).setTitle(list.optString("name"))
-                .setItems(new String[]{"Choose songs","Rename","Delete playlist"},(dialog,which)->playlistAction(()->{
+            .setNegativeButton("Edit",(d,w)->new BrandDialog(this).setTitle(list.optString("name"))
+                .setItems(new String[]{"Choose songs","Rename","Delete playlist"},(menu,which)->playlistAction(()->{
                     if(which==0)editPlaylist(id);else if(which==1)namePlaylist(id,null);
-                    else new AlertDialog.Builder(this).setTitle("Delete playlist?").setMessage("Your saved songs will stay in Library.")
+                    else new BrandDialog(this).setTitle("Delete playlist?").setMessage("Your saved songs will stay in Library.")
                         .setNegativeButton("Keep",null).setPositiveButton("Delete",(confirm,n)->playlistAction(()->{playlists.delete(id);showPlaylists(null);})).show();
-                })).show()).show();
+                })).show()).create();
+        dialog.setOnShowListener(shown->{
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(songs.length()>0);
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setEnabled(songs.length()>0);
+        });dialog.show();
     }
     private void editPlaylist(String id)throws Exception {
         JSONObject list=playlists.get(id);JSONArray old=list.getJSONArray("tracks");
-        JSONArray library=new JSONArray(tracks.toString());String[] labels=new String[library.length()];boolean[] chosen=new boolean[library.length()];
+        JSONArray library=new JSONArray(tracks.toString());
         java.util.Set<String> selected=new java.util.LinkedHashSet<>();for(int i=0;i<old.length();i++)selected.add(old.getString(i));
-        for(int i=0;i<library.length();i++){JSONObject song=library.getJSONObject(i);labels[i]=song.optString("title")+" — "+song.optString("artist");chosen[i]=selected.contains(song.getString("id"));}
-        new AlertDialog.Builder(this).setTitle("Choose songs · "+list.getString("name"))
-            .setMultiChoiceItems(labels,chosen,(d,which,checked)->{
-                String songId=library.optJSONObject(which).optString("id");if(checked)selected.add(songId);else selected.remove(songId);
-            }).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->playlistAction(()->{
+        int padding=Math.round(16*getResources().getDisplayMetrics().density);
+        android.widget.LinearLayout form=new android.widget.LinearLayout(this);form.setOrientation(android.widget.LinearLayout.VERTICAL);
+        form.setPadding(padding,0,padding,0);
+        android.widget.EditText search=new android.widget.EditText(this);search.setSingleLine(true);
+        search.setHint("Search saved songs");search.setContentDescription("Search saved songs");form.addView(search);
+        android.widget.TextView count=new android.widget.TextView(this);count.setTextColor(0xff6e6b64);
+        count.setPadding(0,padding/2,0,padding/2);form.addView(count);
+        android.widget.ListView choices=new android.widget.ListView(this);
+        choices.setChoiceMode(android.widget.ListView.CHOICE_MODE_MULTIPLE);
+        form.addView(choices,new android.widget.LinearLayout.LayoutParams(-1,Math.round(300*getResources().getDisplayMetrics().density)));
+        java.util.List<String> visibleIds=new java.util.ArrayList<>();
+        Runnable update=()->{
+            String query=search.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+            java.util.List<String> labels=new java.util.ArrayList<>();visibleIds.clear();
+            for(int i=0;i<library.length();i++){
+                JSONObject song=library.optJSONObject(i);if(song==null)continue;
+                String title=song.optString("title");String artist=song.optString("artist");
+                if(!(title+" "+artist).toLowerCase(java.util.Locale.ROOT).contains(query))continue;
+                visibleIds.add(song.optString("id"));labels.add(title+(artist.isEmpty()?"":" · "+artist));
+            }
+            choices.setAdapter(new android.widget.ArrayAdapter<>(this,android.R.layout.simple_list_item_multiple_choice,labels));
+            for(int i=0;i<visibleIds.size();i++)choices.setItemChecked(i,selected.contains(visibleIds.get(i)));
+            int rowHeight=Math.round(64*getResources().getDisplayMetrics().density);
+            choices.getLayoutParams().height=Math.min(Math.round(300*getResources().getDisplayMetrics().density),
+                Math.max(rowHeight,visibleIds.size()*rowHeight));
+            choices.requestLayout();
+            count.setText(getString(R.string.playlist_picker_count,selected.size(),visibleIds.size()));
+        };
+        choices.setOnItemClickListener((parent,view,position,itemId)->{
+            String songId=visibleIds.get(position);if(choices.isItemChecked(position))selected.add(songId);else selected.remove(songId);
+            count.setText(getString(R.string.playlist_picker_count,selected.size(),visibleIds.size()));
+        });
+        search.addTextChangedListener(new android.text.TextWatcher(){
+            @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            @Override public void onTextChanged(CharSequence s,int start,int before,int count){update.run();}
+            @Override public void afterTextChanged(android.text.Editable s){}
+        });
+        update.run();
+        new BrandDialog(this).setTitle("Choose songs · "+list.getString("name"))
+            .setView(form).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->playlistAction(()->{
                 JSONArray ids=new JSONArray();for(String songId:selected)ids.put(songId);
                 playlists.save(id,list.getString("name"),ids);openPlaylist(id);
-            })).show();
+            })).show().getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
     }
     private void export(String id) throws Exception {
         JSONObject song=track(id);exportId=id;
@@ -479,7 +535,7 @@ public class MainActivity extends Activity {
     }
     private void confirmDelete(String id) throws Exception {
         JSONObject song=track(id);
-        new AlertDialog.Builder(this).setTitle(song.optString("title")).setMessage("Remove this song from Sonkip? Files you exported are kept.")
+        new BrandDialog(this).setTitle(song.optString("title")).setMessage("Remove this song from Sonkip? Files you exported are kept.")
             .setNegativeButton("Keep",null).setPositiveButton("Remove",(dialog,which) -> requests.execute(() -> {
                 try {request("DELETE","/api/tracks/"+id,null);main.post(() -> {
                     if(PlaybackService.current!=null && id.equals(PlaybackService.current.trackId)) {
@@ -492,7 +548,7 @@ public class MainActivity extends Activity {
     private void confirmDeleteSelected(String value) throws Exception {
         JSONArray ids=new JSONArray(value);
         if(ids.length()==0)return;
-        new AlertDialog.Builder(this).setTitle("Delete selected songs?")
+        new BrandDialog(this).setTitle("Delete selected songs?")
             .setMessage(ids.length()+" song"+(ids.length()==1?"":"s")+" will be removed from Sonkip. Files exported to another folder are kept.")
             .setNegativeButton("Keep",null).setPositiveButton("Delete",(dialog,which)->requests.execute(()->{
                 try {

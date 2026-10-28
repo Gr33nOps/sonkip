@@ -8,6 +8,8 @@ __pycache__/
 *.ytdl
 .DS_Store
 *.apk
+*.apk.idsig
+*.apk.sha256
 /.gradle-release-audit*/
 
 .vercel

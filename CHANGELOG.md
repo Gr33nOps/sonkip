@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.7.0
+
+- Match the Android app to the website with square controls, fine borders, paper and ink surfaces, orange accents, and acid-yellow playback states.
+- Apply Manrope and DM Mono to native dialogs and their actions, including format, playlist, library, backup, and playback controls.
+- Refine Find, Library, Downloads, playlist review, and the expandable player for mobile use.
+- Add searchable playlist song selection and clearer repeat and sleep timer states.
+- Fix the Music folder menu, stray null metadata, lingering success notices, and disabled Save styling.
+- Show newest download activity first so recent saves and active jobs are easy to find.
+
 ## 2.6.1
 
 - Add first-run format, artwork, and Music folder setup on Android and desktop.

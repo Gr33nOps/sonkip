@@ -2,9 +2,16 @@
 <resources>
     <style name="Theme.Sonkip" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#ff4d00</item>
+        <item name="android:colorAccent">#ee4700</item>
         <item name="android:navigationBarColor">#161616</item>
-        <item name="android:statusBarColor">#f7f5ef</item>
+        <item name="android:statusBarColor">#f3f0e8</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:alertDialogTheme">@style/Theme.Sonkip.Dialog</item>
+    </style>
+    <style name="Theme.Sonkip.Dialog" parent="android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">#ee4700</item>
+        <item name="android:windowBackground">@drawable/dialog_surface</item>
+        <item name="android:windowElevation">0dp</item>
+        <item name="android:fontFamily">sans</item>
     </style>
 </resources>
