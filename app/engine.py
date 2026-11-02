@@ -11,8 +11,11 @@ import json
 import unicodedata
 import urllib.request
 import math
+import subprocess
+import time
+import urllib.error
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, parse_qs
@@ -26,6 +29,7 @@ URL_RE = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
 AUDIO_FORMATS = {"original", "mp3", "m4a", "opus", "flac", "webm"}
 CONVERTED_AUDIO_FORMATS = {"mp3", "m4a", "opus", "flac"}
 MAX_ARTWORK_BYTES = 8 * 1024 * 1024
+_ARTWORK_HOST_RETRY: dict[str, float] = {}
 
 # Android does not bundle the desktop browser-based token provider.
 COOKIE_FREE_YOUTUBE_ARGS = {
@@ -109,6 +113,14 @@ def _clean_metadata_text(value: Any) -> str:
 
 
 def _release_date(value: Any, year: Any = None) -> str:
+    if isinstance(value, dict):
+        release_year = _positive_int(value.get('year'))
+        if release_year:
+            try:
+                return date(release_year, int(value['month']), int(value['day'])).isoformat()
+            except (KeyError, TypeError, ValueError):
+                return f'{release_year:04d}'
+        value = value.get('isoString', '')
     digits = re.sub(r"\D", "", str(value or ""))
     if len(digits) >= 8:
         return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
@@ -150,12 +162,29 @@ def resolve_music_metadata(info: dict[str, Any], source: dict[str, Any] | None =
     merged = dict(info or {})
     for key, value in (source or {}).items():
         if value not in (None, "", [], {}) and value not in ("Unknown artist", "Untitled"):
-            if key == "release_type" and value == "single" and merged.get("album") and not source.get("album"):
+            if key == "release_type" and value in ("single", "unknown") and merged.get("album") and not source.get("album"):
+                continue
+            if key == "track_number" and not (source.get("album") or source.get("release_id")):
                 continue
             merged[key] = value
             if key == "title":
                 merged["track"] = value
     artist = _clean_metadata_text(merged.get("artist") or merged.get("creator") or merged.get("uploader"))
+    description = str(merged.get('description') or '')
+    def credit(label):
+        match = re.search(r'(?im)^\s*(?:'+label+r')\s*[:\-]\s*([^\r\n]{1,300})', description)
+        return _clean_metadata_text(match[1]).strip(' -') if match else ''
+    if not merged.get('track'):
+        merged['track'] = credit(r'Song(?:\s+name)?|Track')
+    if not merged.get('album'):
+        merged['album'] = credit(r'Album(?:\s+name)?')
+    if not (merged.get('artist') or merged.get('creator')):
+        performer = credit(r'Singer|Artist|Vocals?')
+        title_credit = re.split(r'\s+[-–—]\s+', _clean_metadata_text(merged.get('title')), maxsplit=1)
+        if performer:
+            artist = performer
+        elif len(title_credit) == 2 and title_credit[0] and len(title_credit[0]) <= 120:
+            artist = title_credit[0]
     artist = re.sub(r"\s+-\s+Topic$", "", artist, flags=re.IGNORECASE).strip() or "Unknown artist"
     title = _clean_metadata_text(merged.get("track") or merged.get("title")) or "Untitled"
     title = re.sub(
@@ -166,8 +195,8 @@ def resolve_music_metadata(info: dict[str, Any], source: dict[str, Any] | None =
         flags=re.IGNORECASE,
     ).strip() or title
     title = re.sub(
-        r"\s*[\[(](?:official\s+)?(?:audio|video|music\s+video|lyric\s+video|lyrics)[\])]\s*$",
-        "",
+        r"\s*[\[(](?:official\s+)?(?:audio|video|music\s+video|lyric\s+video|lyrics)[\])]\s*",
+        " ",
         title,
         flags=re.IGNORECASE,
     ).strip() or title
@@ -186,7 +215,7 @@ def resolve_music_metadata(info: dict[str, Any], source: dict[str, Any] | None =
         "genre": _clean_metadata_text(merged.get("genre")),
         "duration": int(round(duration)) if isinstance(duration, (int, float)) and duration >= 0 else None,
         "release_id": _clean_metadata_text(merged.get("release_id") or merged.get("album_id")),
-        "release_type": _clean_metadata_text(merged.get("release_type")).lower() or ("album" if album else "single"),
+        "release_type": _clean_metadata_text(merged.get("release_type")).lower() or ("album" if album else "unknown"),
     }
 
 
@@ -198,19 +227,28 @@ def _download_artwork(video_id: str, artwork_url: str = "") -> tuple[bytes, str]
     parsed = urlparse(artwork_url)
     trusted_art_hosts = {
         "i.ytimg.com", "lh3.googleusercontent.com", "i.scdn.co",
-        "image-cdn-ak.spotifycdn.com", "mosaic.scdn.co", "i1.sndcdn.com",
+        "image-cdn-ak.spotifycdn.com", "mosaic.scdn.co", "i1.sndcdn.com", "yt3.googleusercontent.com",
     }
-    url = artwork_url if parsed.scheme == "https" and parsed.hostname in trusted_art_hosts else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "Sonkip/2"},
-    )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        artwork = response.read(MAX_ARTWORK_BYTES + 1)
-        content_type = str(response.headers.get("Content-Type", "image/jpeg")).split(";", 1)[0].lower()
-    if not artwork or len(artwork) > MAX_ARTWORK_BYTES or content_type not in ("image/jpeg", "image/png"):
-        return None
-    return artwork, content_type
+    trusted_art_hosts.update({"image-cdn-fa.spotifycdn.com", "image-cdn-kr.spotifycdn.com"})
+    urls = [artwork_url] if parsed.scheme == "https" and parsed.hostname in trusted_art_hosts else []
+    if VIDEO_ID_RE.fullmatch(video_id):
+        urls.extend(f"https://i.ytimg.com/vi/{video_id}/{size}.jpg" for size in ("maxresdefault", "hqdefault"))
+    for url in dict.fromkeys(urls):
+        host = urlparse(url).hostname or ''
+        if _ARTWORK_HOST_RETRY.get(host, 0) > time.monotonic():
+            continue
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "image/jpeg,image/png"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                artwork = response.read(MAX_ARTWORK_BYTES + 1)
+                content_type = str(response.headers.get("Content-Type", "image/jpeg")).split(";", 1)[0].lower()
+            if artwork and len(artwork) <= MAX_ARTWORK_BYTES and content_type in ("image/jpeg", "image/png"):
+                return artwork, content_type
+        except (OSError, ValueError) as exc:
+            if isinstance(exc, OSError) and not isinstance(exc, urllib.error.HTTPError):
+                _ARTWORK_HOST_RETRY[host] = time.monotonic()+60
+            continue
+    return None
 
 
 def _embed_music_metadata(
@@ -221,6 +259,9 @@ def _embed_music_metadata(
 ) -> bool:
     extension = path.suffix.lower()
     if extension not in (".m4a", ".mp4", ".mp3", ".flac", ".opus", ".ogg"):
+        return False
+    from mutagen import File as AudioFile
+    if AudioFile(path) is None:
         return False
     details = resolve_music_metadata(info, source_metadata)
     try:
@@ -256,7 +297,7 @@ def _embed_music_metadata(
         audio = MP3(path)
         if audio.tags is None:
             audio.add_tags()
-        for frame in ("TIT2", "TPE1", "TPE2", "TALB", "TRCK", "TDRC", "TCON", "APIC"):
+        for frame in ("TIT2", "TPE1", "TPE2", "TALB", "TRCK", "TDRC", "TCON"):
             audio.tags.delall(frame)
         audio.tags.add(TIT2(encoding=3, text=details["title"]))
         audio.tags.add(TPE1(encoding=3, text=details["artist"]))
@@ -271,6 +312,7 @@ def _embed_music_metadata(
             audio.tags.add(TCON(encoding=3, text=details["genre"]))
         if artwork:
             data, content_type = artwork
+            audio.tags.delall('APIC')
             audio.tags.add(APIC(encoding=3, mime=content_type, type=3, desc="Cover", data=data))
         audio.save(v2_version=3)
     else:
@@ -305,6 +347,35 @@ def _embed_music_metadata(
                 ]
         audio.save()
     return True
+
+
+def _prepare_tagged_audio(path: Path) -> Path:
+    """Move WebM Opus packets into Ogg so standard cover/tag readers can read them.
+
+    This is a container change: audio is copied without re-encoding.
+    """
+    if path.suffix.lower() not in ('.webm', '.mp4'):
+        return path
+    target = path.with_suffix('.opus' if path.suffix.lower() == '.webm' else '.m4a')
+    try:
+        if os.environ.get('SONKIP_ANDROID_TOKENS') == '1':
+            from java import jclass
+            extractor = jclass('io.github.gr33nops.sonkip.AndroidAudioExtractor')
+            if path.suffix.lower() == '.webm':
+                extractor.extractOpus(str(path), str(target))
+            else:
+                extractor.extractM4a(str(path), str(target))
+        else:
+            import imageio_ffmpeg
+            subprocess.run([shutil.which('ffmpeg') or imageio_ffmpeg.get_ffmpeg_exe(),
+                '-hide_banner', '-loglevel', 'error', '-y', '-i', str(path), '-vn',
+                '-c:a', 'copy', str(target)], check=True, capture_output=True, timeout=120)
+        if not target.is_file() or not target.stat().st_size:
+            raise RuntimeError('Audio remux produced no file')
+        return target
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
 
 
 def get_stream_url(video_id: str, cookiefile: Path | None = None) -> str | None:
@@ -421,6 +492,11 @@ def search_music(query: str, cookiefile: Path | None = None) -> list[dict[str, A
         except Exception:
             pass
 
+    catalog = _catalog_search(clean)
+    if catalog:
+        ranked = _rank_search_results(clean, [{**t, 'uploader': t['artist']+' - Topic'} for t in catalog])
+        if ranked:
+            return ranked
     with YoutubeDL(opts) as ydl:
         data = ydl.extract_info(f"ytsearch15:{clean}", download=False)
 
@@ -458,8 +534,11 @@ def extract_playlist(url: str, cookiefile: Path | None = None) -> dict[str, Any]
     entries = []
     seen = set()
     album_release = playlist_id.startswith("OLAK5uy")
-    album_title = _clean_metadata_text((data or {}).get("title")) if album_release else ""
-    album_artist = _clean_metadata_text((data or {}).get("album_artist") or (data or {}).get("artist")) if album_release else ""
+    album_title = _clean_metadata_text((data or {}).get("album") or (data or {}).get("title")) if album_release else ""
+    album_title = re.sub(r'^Album\s*[-–—:]\s*', '', album_title, flags=re.I)
+    album_artist = _clean_metadata_text((data or {}).get("album_artist") or (data or {}).get("artist")
+        or (data or {}).get('uploader')) if album_release else ""
+    album_artist = re.sub(r'\s+-\s+Topic$', '', album_artist, flags=re.I)
     playlist_art = _artwork_url(data or {})
     for position, item in enumerate((data or {}).get("entries") or [], 1):
         if not isinstance(item, dict):
@@ -477,31 +556,139 @@ def extract_playlist(url: str, cookiefile: Path | None = None) -> dict[str, Any]
                 entries.append(result)
     if not entries:
         raise ValueError("No downloadable songs were found in that playlist")
-    return {"title": str((data or {}).get("title") or "Playlist"), "entries": entries,
-            "artwork_url": playlist_art}
+    source_count = len(entries)
+    def official_recording(entry):
+        if entry.get('source_quality') == 'official':
+            return entry, None
+        try:
+            found = _match_track(entry, cookiefile)
+            if found:
+                release = {key: entry[key] for key in ('album', 'album_artist', 'release_id', 'release_type', 'track_number')
+                           if entry.get(key)} if entry.get('album') else {}
+                metadata = resolve_music_metadata(found, release)
+                return {**found, **metadata, 'thumbnail': metadata['artwork_url'],
+                        'original_video_id': entry['video_id']}, None
+        except Exception:
+            pass
+        return None, {'title': entry['title'], 'artist': entry['artist'], 'reason': 'No close official recording found'}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        matched = list(pool.map(official_recording, entries))
+    recordings = [found for found, _ in matched if found]
+    unique = list({item['video_id']: item for item in reversed(recordings)}.values())
+    unique.reverse()
+    if not unique:
+        raise ValueError('No close official recordings were found in that playlist')
+    return {"title": str((data or {}).get("title") or "Playlist"), "entries": unique,
+            "artwork_url": playlist_art, 'source_count': source_count,
+            'unmatched': [missing for _, missing in matched if missing],
+            'duplicate_count': len(recordings)-len(unique)}
 
 
 def _words(value: str) -> set[str]:
     return set(re.findall(r'\w+', unicodedata.normalize('NFKC', value).casefold()))
 
 
-def _match_track(track: dict, cookiefile: Path | None) -> dict | None:
-    candidates = search_music(f"{track['artist']} {track['title']}", cookiefile)
-    title_words, artist_words = _words(track['title']), _words(track['artist'])
-    versions = {'live', 'cover', 'remix', 'slowed', 'instrumental', 'karaoke', 'nightcore', 'demo', 'sped'}
+def _request_music_catalog(query: str) -> dict:
+    request = urllib.request.Request('https://music.youtube.com/youtubei/v1/search?prettyPrint=false',
+        data=json.dumps({'context': {'client': {'clientName': 'WEB_REMIX',
+            'clientVersion': '1.20261028.01.00', 'hl': 'en', 'gl': 'US'}},
+            'query': query, 'params': 'EgWKAQIIAWoMEA4QChADEAQQCRAF'}).encode(),
+        headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0', 'Origin': 'https://music.youtube.com'})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.loads(response.read(8 * 1024 * 1024))
+
+
+def _catalog_search(query: str) -> list[dict]:
+    """Read artist-delivered recordings and release metadata from YouTube Music."""
+    try:
+        data = _request_music_catalog(query)
+    except (OSError, ValueError):
+        return []
+    rows = []
+    def walk(value):
+        if isinstance(value, dict):
+            if 'musicResponsiveListItemRenderer' in value:
+                rows.append(value['musicResponsiveListItemRenderer'])
+            else:
+                for child in value.values(): walk(child)
+        elif isinstance(value, list):
+            for child in value: walk(child)
+    walk(data)
+    results, seen = [], set()
+    for row in rows:
+        columns = row.get('flexColumns') or []
+        if not columns:
+            continue
+        title_runs = columns[0].get('musicResponsiveListItemFlexColumnRenderer', {}).get('text', {}).get('runs') or []
+        watch = next((r.get('navigationEndpoint', {}).get('watchEndpoint') for r in title_runs
+                      if r.get('navigationEndpoint', {}).get('watchEndpoint')), {})
+        video_id = watch.get('videoId', '')
+        kind = watch.get('watchEndpointMusicSupportedConfigs', {}).get('watchEndpointMusicConfig', {}).get('musicVideoType')
+        if not VIDEO_ID_RE.fullmatch(video_id) or video_id in seen or kind != 'MUSIC_VIDEO_TYPE_ATV':
+            continue
+        artists, album, release_id, duration = [], '', '', None
+        for column in columns[1:]:
+            runs = column.get('musicResponsiveListItemFlexColumnRenderer', {}).get('text', {}).get('runs') or []
+            for run in runs:
+                text = run.get('text', '')
+                browse_id = run.get('navigationEndpoint', {}).get('browseEndpoint', {}).get('browseId', '')
+                if browse_id.startswith('UC'):
+                    artists.append(text)
+                elif browse_id.startswith(('MPRE', 'OLAK')):
+                    album, release_id = text, browse_id
+                elif re.fullmatch(r'\d{1,2}:\d{2}(?::\d{2})?', text):
+                    duration = 0
+                    for part in text.split(':'): duration = duration * 60 + int(part)
+        if not artists:
+            continue
+        thumbnails = row.get('thumbnail', {}).get('musicThumbnailRenderer', {}).get('thumbnail', {}).get('thumbnails') or []
+        artwork = thumbnails[-1].get('url', '') if thumbnails else ''
+        artwork = re.sub(r'=w\d+-h\d+', '=w600-h600', artwork)
+        seen.add(video_id)
+        metadata = resolve_music_metadata({'title': ''.join(r.get('text', '') for r in title_runs),
+            'artist': ', '.join(artists), 'album_artist': artists[0], 'album': album,
+            'release_id': release_id, 'duration': duration, 'artwork_url': artwork})
+        results.append({'video_id': video_id, **metadata, 'thumbnail': artwork,
+            'source_quality': 'official', 'artist_channel': True, 'is_lyrics_upload': False})
+    return results
+
+
+def _match_track(track: dict, cookiefile: Path | None, _catalog: bool = True, _catalog_only: bool = False) -> dict | None:
+    candidates = _catalog_search(f"{track['artist'].split(',', 1)[0]} {track['title']}") if _catalog else []
+    catalog_candidates = bool(candidates)
+    if not candidates:
+        if _catalog_only:
+            return None
+        candidates = search_music(f"{track['artist']} {track['title']}", cookiefile)
+    base_title = re.split(r'\s*[([](?:feat\.?|ft\.?|with)\s|\s+(?:feat\.?|ft\.?)\s+', track['title'], flags=re.I)[0]
+    base_title = re.sub(r'\s*[-–—]\s*(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?$', '', base_title, flags=re.I)
+    title_words = _words(base_title)
+    artist_words = _words(track['artist'].split(',', 1)[0])
+    versions = {'live', 'cover', 'remix', 'mix', 'acoustic', 'slowed', 'instrumental', 'karaoke', 'nightcore', 'demo', 'sped',
+                'making', 'footnotes', 'reaction', 'interview', 'tutorial', 'explained'}
+    # Search ranking intentionally shows a short list. A second, audio-specific
+    # query avoids losing the recording behind an interview or a lyric upload.
+    if not catalog_candidates and not any(c.get('source_quality') == 'official' and not (_words(c['title']) & versions) - title_words
+               for c in candidates):
+        fallback = search_music(f"{track['artist'].split(',', 1)[0]} {track['title']} official audio", cookiefile)
+        candidates = list({c['video_id']: c for c in candidates + fallback}.values())
     best, best_score = None, 0
     for candidate in candidates:
+        if candidate.get('source_quality') == 'community':
+            continue
         words = _words(candidate['title'])
         if (candidate.get('is_lyrics_upload') or words & {'lyric', 'lyrics'}) and not title_words & {'lyric', 'lyrics'}:
             continue
         if (words & versions) - (title_words & versions):
             continue
         title_score = len(title_words & words) / max(1, len(title_words))
-        artist_score = len(artist_words & (words | _words(candidate['artist']))) / max(1, len(artist_words))
+        artist_score = len(artist_words & _words(candidate['artist'])) / max(1, len(artist_words))
         if title_score < .8 or artist_score < .5:
             continue
         expected, actual = track.get('duration'), candidate.get('duration')
-        if expected and actual and abs(expected - actual) > max(25, expected * .15):
+        # A music video's short edit can still identify its album for existing
+        # files. Download matching retains the stricter recording-duration limit.
+        if expected and actual and abs(expected - actual) > max(25, expected * (.20 if _catalog_only else .15)):
             continue
         score = title_score + artist_score
         uploader_words = _words(candidate['artist'])
@@ -519,37 +706,122 @@ def _match_track(track: dict, cookiefile: Path | None) -> dict | None:
         if score > best_score:
             best = {**candidate, 'needs_review': not (expected and actual and title_score == 1 and artist_score == 1)}
             best_score = score
+    if best is None and catalog_candidates and not _catalog_only:
+        return _match_track(track, cookiefile, _catalog=False)
     return best
+
+
+def _spotify_album_info(uri: str, token: str) -> dict:
+    body = {'operationName': 'queryAlbum', 'variables': {'uri': uri, 'offset': 0},
+        'extensions': {'persistedQuery': {'version': 1,
+            'sha256Hash': 'ce390dbf7ca6b61a23aec210619e1094fe9d23d7f101ff773ce1146f84d4dd10'}}}
+    request = urllib.request.Request('https://api-partner.spotify.com/pathfinder/v2/query',
+        data=json.dumps(body).encode(), headers={'Authorization': 'Bearer '+token, 'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            album = json.loads(response.read(8 * 1024 * 1024)).get('data', {}).get('albumUnion') or {}
+        artists = [a.get('profile', {}).get('name', '') for a in album.get('artists', {}).get('items', [])]
+        return {'album_artist': ', '.join(a for a in artists if a),
+                'release_type': str(album.get('type') or '').lower(),
+                'release_date': _release_date(album.get('date'))}
+    except (OSError, ValueError):
+        return {}
+
+
+def _spotify_tracks(parsed) -> tuple[str, list[dict], str]:
+    """Read public Spotify metadata, paging beyond the 100-item embed preview."""
+    match = re.fullmatch(r'/(?:intl-[a-z]+/)?(playlist|album)/([A-Za-z0-9]{22})/?', parsed.path)
+    if not match:
+        raise ValueError('Paste a public Spotify playlist or album link')
+    kind, identifier = match[1], match[2]
+    with urllib.request.urlopen(f'https://open.spotify.com/embed/{kind}/{identifier}', timeout=30) as response:
+        html = response.read(8 * 1024 * 1024).decode('utf-8')
+    payload = re.search(r'<script\b[^>]*\bid="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+    if not payload:
+        raise ValueError('Spotify did not expose this playlist. Check that it is public.')
+    state = json.loads(payload[1]).get('props', {}).get('pageProps', {}).get('state', {})
+    entity = state.get('data', {}).get('entity', {})
+    title = entity.get('name') or 'Spotify playlist'
+    token = state.get('settings', {}).get('session', {}).get('accessToken')
+    if kind == 'playlist' and token:
+        tracks, offset, visited = [], 0, set()
+        while offset not in visited:
+            visited.add(offset)
+            body = {
+                'operationName': 'queryPlaylist',
+                'variables': {'uri': f'spotify:playlist:{identifier}', 'limit': 100,
+                              'offset': offset, 'includeItemV3': False},
+                'extensions': {'persistedQuery': {'version': 1,
+                    'sha256Hash': 'c685ca91fb0019c87ff1225f84e1d85b26cd631fa6187f3f0900da182cb0953d'}},
+            }
+            request = urllib.request.Request('https://api-partner.spotify.com/pathfinder/v2/query',
+                data=json.dumps(body).encode(), headers={
+                    'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                result = json.loads(response.read(16 * 1024 * 1024))
+            playlist = (result.get('data') or {}).get('playlistV2') or {}
+            page = playlist.get('content') or {}
+            items = page.get('items')
+            if not isinstance(items, list):
+                raise ValueError('Spotify could not load the full playlist. Please try again; no partial playlist was queued.')
+            title = playlist.get('name') or title
+            for wrapper in items:
+                t = (wrapper.get('itemV2') or {}).get('data') or {}
+                if not t.get('name') or not t.get('uri', '').startswith('spotify:track:'):
+                    continue
+                album = t.get('albumOfTrack') or {}
+                artists = [a.get('profile', {}).get('name', '') for a in t.get('artists', {}).get('items', [])]
+                covers = sorted(album.get('coverArt', {}).get('sources') or [], key=lambda c: c.get('width') or 0)
+                tracks.append({'title': t['name'], 'artist': ', '.join(a for a in artists if a),
+                    'album_artist': artists[0] if artists else '',
+                    'duration': (t.get('duration') or {}).get('totalMilliseconds', 0) / 1000,
+                    'album': album.get('name', ''), 'release_id': album.get('uri', ''),
+                    'track_number': t.get('trackNumber'), 'source_track_id': t['uri'],
+                    'artwork_url': covers[-1]['url'] if covers else '',
+                    'release_type': str(album.get('type') or '').lower(),
+                    'release_date': (album.get('date') or {}).get('isoString', '')})
+            next_offset = page.get('pagingInfo', {}).get('nextOffset')
+            total = page.get('totalCount')
+            consumed = offset + len(items)
+            if next_offset is None:
+                if isinstance(total, int) and consumed < total:
+                    if not items:
+                        raise ValueError(f'Spotify stopped after {consumed} of {total} tracks. Try importing again.')
+                    next_offset = consumed
+                else:
+                    break
+            if not isinstance(next_offset, int) or next_offset <= offset or next_offset > 100000:
+                raise ValueError('Spotify returned an invalid playlist page. Try importing again.')
+            offset = next_offset
+        release_ids = list(dict.fromkeys(t['release_id'] for t in tracks if t['release_id']))
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            albums = dict(zip(release_ids, pool.map(lambda uri: _spotify_album_info(uri, token), release_ids)))
+        for track in tracks:
+            track.update({key: value for key, value in albums.get(track['release_id'], {}).items() if value})
+        return title, tracks, 'Spotify track metadata loaded from every playlist page.'
+    collection_artist = _clean_metadata_text(entity.get('subtitle') or entity.get('artist'))
+    covers = sorted((entity.get('coverArt') or {}).get('sources') or [], key=lambda c: c.get('width') or 0)
+    tracks = [{
+        'title': t['title'], 'artist': t['subtitle'],
+        'album': title if kind == 'album' else _clean_metadata_text(t.get('album')),
+        'album_artist': (collection_artist or t['subtitle']) if kind == 'album' else '',
+        'duration': t.get('duration', 0) / 1000,
+        'track_number': index if kind == 'album' else None,
+        'release_id': f'spotify:album:{identifier}' if kind == 'album' else '',
+        'release_type': 'album' if kind == 'album' else '',
+        'artwork_url': covers[-1]['url'] if kind == 'album' and covers else '',
+    } for index, t in enumerate(entity.get('trackList', []), 1) if t.get('title') and t.get('subtitle')]
+    if kind == 'playlist' and len(tracks) >= 100:
+        raise ValueError('Spotify returned only its 100-song preview. Try again to load the full playlist.')
+    return title, tracks, 'Spotify public release metadata.'
 
 
 def _import_playlist(parsed, cookiefile: Path | None) -> dict:
     if parsed.scheme != 'https' or parsed.username or parsed.port not in (None, 443):
         raise ValueError('Use the HTTPS playlist link from the music service')
     if parsed.hostname == 'open.spotify.com':
-        match = re.fullmatch(r'/(?:intl-[a-z]+/)?(playlist|album)/([A-Za-z0-9]{22})/?', parsed.path)
-        if not match:
-            raise ValueError('Paste a public Spotify playlist or album link')
-        url = f'https://open.spotify.com/embed/{match[1]}/{match[2]}'
-        with urllib.request.urlopen(url, timeout=30) as response:
-            html = response.read(8 * 1024 * 1024).decode('utf-8')
-        payload = re.search(r'<script\b[^>]*\bid="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
-        if not payload:
-            raise ValueError('Spotify did not expose this playlist. Check that it is public.')
-        entity = json.loads(payload[1]).get('props', {}).get('pageProps', {}).get('state', {}).get('data', {}).get('entity', {})
-        source, title = 'Spotify', entity.get('name') or 'Spotify playlist'
-        release_id = match[2] if match[1] == 'album' else ''
-        collection_artist = _clean_metadata_text(entity.get('subtitle') or entity.get('artist'))
-        tracks = [{
-            'title': t['title'],
-            'artist': t['subtitle'],
-            'album': title if match[1] == 'album' else _clean_metadata_text(t.get('album')),
-            'album_artist': (collection_artist or t['subtitle']) if match[1] == 'album' else '',
-            'duration': t.get('duration', 0) / 1000,
-            'track_number': index,
-            'release_id': release_id,
-            'release_type': 'album' if match[1] == 'album' else '',
-        } for index, t in enumerate(entity.get('trackList', []), 1) if t.get('title') and t.get('subtitle')]
-        note = 'Spotify imports the tracks exposed by its public embed; large playlists may be incomplete.'
+        title, tracks, note = _spotify_tracks(parsed)
+        source = 'Spotify'
     else:
         if not re.fullmatch(r'/[\w-]+/sets/[\w-]+/?', parsed.path):
             raise ValueError('Paste a public SoundCloud set or album link')
@@ -576,11 +848,14 @@ def _import_playlist(parsed, cookiefile: Path | None) -> dict:
     matches = [match_one(tracks[0])]
     with ThreadPoolExecutor(max_workers=3) as pool:
         matches.extend(pool.map(match_one, tracks[1:]))
-    entries = [found for found, _ in matches if found]
+    matched = [found for found, _ in matches if found]
+    entries = list({found['video_id']: found for found in reversed(matched)}.values())
+    entries.reverse()
     unmatched = [missing for found, missing in matches if not found]
     if not entries:
         raise ValueError('No close YouTube matches were found. Try searching for a song by title and artist.')
     return {'title': title, 'entries': entries, 'unmatched': unmatched, 'source_count': len(tracks),
+            'duplicate_count': len(matched)-len(entries),
             'source': source, 'notice': note + ' Matches may be different uploads or editions.'}
 
 
@@ -612,6 +887,7 @@ class DownloadManager:
         self.cancellations = {}
         self.futures = {}
         self.jobs: dict[str, dict[str, Any]] = {}
+        self.metadata_repair = {'running': False, 'total': 0, 'completed': 0, 'errors': []}
         for job in store.load_jobs():
             if job['status'] not in ('complete', 'error'):
                 job.update(status='error', speed=None, eta=None, interrupted=True,
@@ -621,7 +897,91 @@ class DownloadManager:
 
     def list_jobs(self):
         with self.lock:
+            for track_id in self.store.deleted_track_ids:
+                self.jobs.pop(track_id, None)
             return [dict(job) for job in reversed(list(self.jobs.values()))]
+
+    def repair_status(self):
+        with self.lock:
+            return {**self.metadata_repair, 'errors': list(self.metadata_repair['errors'])}
+
+    def repair_library(self):
+        with self.lock:
+            if self.metadata_repair['running']:
+                return dict(self.metadata_repair)
+            tracks = self.store.list_tracks()
+            self.metadata_repair = {'running': True, 'total': len(tracks), 'completed': 0, 'errors': []}
+            self.pool.submit(self._repair_library, tracks)
+            return dict(self.metadata_repair)
+
+    def _repair_library(self, tracks):
+        try:
+            for track in tracks:
+                try:
+                    started = time.monotonic()
+                    with self.lock:
+                        self.metadata_repair['current'] = track['title']
+                    self._repair_track(track)
+                    with self.lock:
+                        self.metadata_repair['completed'] += 1
+                        self.metadata_repair['last_seconds'] = round(time.monotonic()-started, 2)
+                except Exception as exc:
+                    with self.lock:
+                        self.metadata_repair['errors'].append({'id': track['id'], 'title': track['title'], 'error': str(exc)[:200]})
+        finally:
+            with self.lock:
+                self.metadata_repair['running'] = False
+
+    def _repair_track(self, track, source_metadata=None):
+        details = resolve_music_metadata(track)
+        from mutagen import File as AudioFile
+        original = self.store.path_for(track)
+        audio = AudioFile(original) if original.suffix.lower() not in ('.webm', '.mp4') else None
+        if (not source_metadata and details['album'] and audio is not None and audio.tags
+                and (audio.tags.get('covr') or audio.tags.get('metadata_block_picture')
+                     or getattr(audio, 'pictures', None) or getattr(audio.tags, 'getall', lambda _: [])('APIC'))):
+            return
+        if not source_metadata:
+            with self.lock:
+                self.metadata_repair['stage'] = 'Finding release details'
+            found = _match_track(details, self.store.youtube_cookies_path, _catalog_only=True)
+            if not found and not details['album']:
+                credit = re.split(r'\s+[-–—]\s+', details['title'], maxsplit=1)
+                if len(credit) == 2:
+                    hypothesis = resolve_music_metadata({'title': credit[1], 'artist': credit[0], 'duration': details['duration']})
+                    found = _match_track(hypothesis, self.store.youtube_cookies_path, _catalog_only=True)
+            if not found and not details['album']:
+                try:
+                    with YoutubeDL({'quiet': True, 'no_warnings': True, 'skip_download': True,
+                        'ignore_no_formats_error': True, 'socket_timeout': 15, 'noplaylist': True,
+                        **youtube_access_options(self.store.youtube_cookies_path)}) as ydl:
+                        info = ydl.extract_info(f"https://www.youtube.com/watch?v={track['video_id']}", download=False)
+                    if isinstance(info, dict):
+                        found = resolve_music_metadata(info)
+                except Exception:
+                    pass
+            if found:
+                # Retain a known release rather than silently switching editions.
+                source_metadata = found if not details['album'] else {
+                    key: value for key, value in found.items() if key == 'artwork_url' and found.get('album') == details['album']}
+        details = resolve_music_metadata(details, source_metadata)
+        staged = self.store.tracks_dir / ('.repair-' + uuid.uuid4().hex + original.suffix)
+        prepared = staged
+        try:
+            shutil.copyfile(original, staged)
+            with self.lock:
+                self.metadata_repair['stage'] = 'Preparing audio'
+            prepared = _prepare_tagged_audio(staged)
+            with self.lock:
+                self.metadata_repair['stage'] = 'Writing details and cover'
+            if not _embed_music_metadata(prepared, details, track['video_id']):
+                raise ValueError('This audio format cannot store music artwork')
+            with self.lock:
+                self.metadata_repair['stage'] = 'Saving song'
+            self.store.replace_track_audio(track['id'], prepared, details)
+        finally:
+            staged.unlink(missing_ok=True)
+            prepared.unlink(missing_ok=True)
 
     def get_job(self, job_id: str):
         with self.lock:
@@ -848,6 +1208,11 @@ class DownloadManager:
                         ) from first_error
             if not info:
                 raise RuntimeError("No audio information was returned")
+            details = resolve_music_metadata(info, source_metadata)
+            if not details['album']:
+                found = _match_track(details, self.store.youtube_cookies_path, _catalog_only=True)
+                if found and found.get('album'):
+                    source_metadata = resolve_music_metadata(found, source_metadata)
             if cancelled.is_set():
                 raise RuntimeError('Cancelled. Retry to resume.')
 
@@ -870,13 +1235,19 @@ class DownloadManager:
                 path.unlink()
                 path = target
             metadata_embedded = False
+            metadata_error = None
             if embed_metadata:
                 try:
+                    original_path = path
+                    path = _prepare_tagged_audio(path)
                     metadata_embedded = _embed_music_metadata(path, info, video_id, source_metadata)
-                except Exception:
+                    if metadata_embedded and original_path != path:
+                        original_path.unlink(missing_ok=True)
+                except Exception as metadata_failure:
                     # Music details are an enhancement; a playable download should
                     # remain available if artwork or a malformed source tag fails.
                     metadata_embedded = False
+                    metadata_error = 'Music details could not be saved: ' + str(metadata_failure)[:180]
             selected = (info.get("requested_downloads") or [{}])[0]
             codec = audio_format if audio_format in CONVERTED_AUDIO_FORMATS and not fallback_applied else selected.get("acodec") or info.get("acodec")
             abr = selected.get("abr") or info.get("abr")
@@ -907,6 +1278,7 @@ class DownloadManager:
                 self.jobs[job_id].update(status='complete', percent=100, track_id=job_id, error=None, speed=None, eta=None,
                                          title=track['title'], artist=track['artist'],
                                          metadata_embedded=metadata_embedded,
+                                         metadata_error=metadata_error,
                                          format_fallback=track['extension'] if fallback_applied else None)
                 self.store.save_job(self.jobs[job_id])
         except Exception as exc:

@@ -167,8 +167,8 @@ class FakeYoutubeDL:
         if url == "https://www.youtube.com/playlist?list=PLroadtrip":
             assert download is False
             return {"title": "Road trip", "entries": [
-                {"id": VIDEO_ID, "title": "Sample <Audio>", "uploader": "Example Artist"},
-                {"id": "M7lc1UVf-VE", "title": "Second song", "uploader": "Second Artist"},
+                {"id": VIDEO_ID, "title": "Sample <Audio>", "uploader": "Example Artist - Topic"},
+                {"id": "M7lc1UVf-VE", "title": "Second song", "uploader": "Second Artist - Topic"},
                 None,
             ]}
         if url.startswith("ytsearch"):

@@ -149,6 +149,29 @@ public class NativeUiTest {
         assertFalse(NativeUi.isTrustedArtworkUrl("https://tracker.example/cover.jpg"));
         assertFalse(NativeUi.isTrustedArtworkUrl("not-a-url"));
     }
+    @Test public void savedSongLoadsArtworkWithoutARemoteUrl() throws Exception {
+        java.io.File folder=new java.io.File(RuntimeEnvironment.getApplication().getFilesDir(),"music/tracks");
+        folder.mkdirs();
+        java.io.File audio=new java.io.File(folder,"Artist - Song.m4a");
+        java.nio.file.Files.write(audio.toPath(),new byte[]{1});
+        NativeUi ui=screen();
+        ui.setTracks(new JSONArray().put(new JSONObject().put("id","saved-cover")
+                .put("title","Song").put("filename",audio.getName())));
+        ui.showTab("library");
+        assertNotNull("Embedded covers must load even offline",ui.findViewWithTag("artwork-saved-cover"));
+    }
+    @Test public void savedArtworkCannotReadOutsideTracksFolder() throws Exception {
+        java.io.File outside=new java.io.File(RuntimeEnvironment.getApplication().getFilesDir(),"outside.m4a");
+        java.nio.file.Files.write(outside.toPath(),new byte[]{1});
+        NativeUi ui=screen();
+        ui.setTracks(new JSONArray().put(new JSONObject().put("id","outside-cover")
+                .put("title","Song").put("filename","../../outside.m4a")));
+        ui.showTab("library");
+        assertNull(ui.findViewWithTag("artwork-outside-cover"));
+    }
+    @Test public void artistCatalogArtworkHostIsAllowed() {
+        assertTrue(NativeUi.isTrustedArtworkUrl("https://yt3.googleusercontent.com/catalog-cover"));
+    }
     @Test public void busyPlaylistSubmissionCannotBeStartedTwice() throws Exception {
         NativeUi ui = screen();
         ui.setPlaylistPreview(new JSONObject("{\"preview_id\":\"preview123\",\"entries\":[{\"video_id\":\"dQw4w9WgXcQ\",\"title\":\"One\"}]}"));

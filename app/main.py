@@ -195,6 +195,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         return {"preview_id": preview_id, "title": playlist["title"], "count": len(entries), "entries": entries,
                 "unmatched": playlist.get("unmatched", []), "notice": playlist.get("notice", ""),
                 "source_count": playlist.get("source_count", len(entries)),
+                "duplicate_count": playlist.get("duplicate_count", 0),
                 "artwork_url": playlist.get("artwork_url", "")}
 
     @app.post("/api/playlists/download", status_code=202)
@@ -220,7 +221,15 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @app.get("/api/jobs")
     def list_jobs():
-        return {"jobs": manager.list_jobs()}
+        return {"jobs": manager.list_jobs(), "metadata_repair": manager.repair_status()}
+
+    @app.get('/api/library/repair')
+    def repair_status():
+        return manager.repair_status()
+
+    @app.post('/api/library/repair', status_code=202)
+    def repair_library():
+        return manager.repair_library()
 
     @app.get("/api/jobs/{job_id}")
     def get_job(job_id: str):
@@ -247,6 +256,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @app.get("/api/tracks")
     def list_tracks():
+        store.sync_music_folder()
         return {"tracks": store.list_tracks()}
 
     @app.get('/api/backup')

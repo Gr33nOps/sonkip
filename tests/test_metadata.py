@@ -235,3 +235,167 @@ def test_text_tags_survive_when_cover_art_is_unavailable(tmp_path, monkeypatch):
         assert "covr" not in tags
     finally:
         manager.pool.shutdown(wait=True)
+
+
+def test_failed_primary_artwork_falls_back_to_youtube_cover(tmp_path, monkeypatch):
+    fixture = tmp_path / 'song.m4a'
+    make_m4a(fixture)
+    def fetch(request, **kwargs):
+        if request.full_url.startswith('https://i.scdn.co/'):
+            raise OSError('Artwork CDN unavailable')
+        return ArtworkResponse()
+    monkeypatch.setattr(engine.urllib.request, 'urlopen', fetch)
+    assert engine._embed_music_metadata(fixture, {'title': 'Song', 'artist': 'Artist',
+        'artwork_url': 'https://i.scdn.co/image/missing'}, 'NMRhx71bGo4')
+    assert bytes(MP4(fixture).tags['covr'][0]) == JPEG_1PX
+
+
+def test_playlist_placeholder_cannot_turn_a_known_album_into_a_single():
+    details = engine.resolve_music_metadata({'title': 'Song', 'artist': 'Artist', 'album': 'Real Album'},
+        {'title': 'Song', 'release_type': 'single', 'track_number': 92})
+    assert details['album'] == 'Real Album'
+    assert details['release_type'] == 'album'
+    # A playlist position does not identify a track's position within its album.
+    assert details['track_number'] is None
+
+
+def test_original_webm_download_preserves_opus_audio_and_embeds_album_cover(tmp_path, monkeypatch):
+    fixture = tmp_path / 'source.webm'
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-hide_banner', '-loglevel', 'error',
+        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.3', '-c:a', 'libopus', '-y', str(fixture)], check=True)
+    monkeypatch.setattr(engine, 'YoutubeDL', downloader_for(fixture, {
+        'track': 'Song', 'artist': 'Artist', 'album': 'Album', 'duration': 1, 'acodec': 'opus'}))
+    monkeypatch.setattr(engine.urllib.request, 'urlopen', lambda *a, **kw: ArtworkResponse())
+    manager = engine.DownloadManager(MusicStore(tmp_path / 'library'))
+    try:
+        job_id = manager.start('NMRhx71bGo4', 'original')
+        manager.pool.shutdown(wait=True)
+        job = manager.get_job(job_id)
+        assert job['status'] == 'complete', job
+        song = manager.store.get_track(job_id)
+        assert song['extension'] == 'opus'
+        audio = OggOpus(manager.store.path_for(song))
+        assert audio['album'] == ['Album']
+        assert 'metadata_block_picture' in audio
+        assert song['codec'] == 'opus'
+    finally:
+        manager.pool.shutdown(wait=True)
+
+
+def test_repair_adds_missing_album_and_art_to_existing_song_without_redownload(tmp_path, monkeypatch):
+    store = MusicStore(tmp_path / 'library')
+    fixture = store.tracks_dir / ('a'*32 + '.m4a')
+    make_m4a(fixture)
+    store.add_track({'id': 'a'*32, 'video_id': 'NMRhx71bGo4', 'title': 'Artist - Song (Audio)',
+        'artist': 'Artist', 'duration': 200, 'filename': fixture.name, 'extension': 'm4a',
+        'bytes': fixture.stat().st_size})
+    monkeypatch.setattr(engine, '_catalog_search', lambda *a: [
+        {'video_id': 'abcdefghijk', 'title': 'Song', 'artist': 'Artist', 'album_artist': 'Artist',
+         'album': 'Real Album', 'duration': 200, 'release_id': 'MPREb_release', 'source_quality': 'official'}])
+    monkeypatch.setattr(engine.urllib.request, 'urlopen', lambda *a, **kw: ArtworkResponse())
+    monkeypatch.setattr(engine, 'YoutubeDL', lambda *a: pytest.fail('Repair must reuse saved audio'))
+    manager = engine.DownloadManager(store)
+    try:
+        manager.repair_library()
+        manager.pool.shutdown(wait=True)
+        song = store.get_track('a'*32)
+        assert song['title'] == 'Song'
+        assert song['album'] == 'Real Album'
+        assert bytes(MP4(store.path_for(song)).tags['covr'][0]) == JPEG_1PX
+        assert manager.repair_status()['completed'] == 1
+    finally:
+        manager.pool.shutdown(wait=True)
+
+
+def test_original_mp4_audio_is_saved_in_a_player_readable_m4a_container(tmp_path, monkeypatch):
+    fixture = tmp_path / 'source.mp4'
+    make_m4a(fixture)
+    monkeypatch.setattr(engine, 'YoutubeDL', downloader_for(fixture, {
+        'track': 'Song', 'artist': 'Artist', 'album': 'Album', 'acodec': 'mp4a.40.2'}))
+    monkeypatch.setattr(engine.urllib.request, 'urlopen', lambda *a, **kw: ArtworkResponse())
+    manager = engine.DownloadManager(MusicStore(tmp_path / 'library'))
+    try:
+        job_id = manager.start('NMRhx71bGo4', 'original')
+        manager.pool.shutdown(wait=True)
+        assert manager.get_job(job_id)['status'] == 'complete'
+        song = manager.store.get_track(job_id)
+        assert song['extension'] == 'm4a'
+        assert bytes(MP4(manager.store.path_for(song)).tags['covr'][0]) == JPEG_1PX
+    finally:
+        manager.pool.shutdown(wait=True)
+
+
+def test_label_channel_name_is_not_used_as_the_credited_performer():
+    details = engine.resolve_music_metadata({'title': 'Joji - Glimpse of Us (Official Audio)', 'uploader': '88rising'})
+    assert details['artist'] == 'Joji'
+    assert details['title'] == 'Glimpse of Us'
+
+
+def test_repair_can_correct_legacy_label_artist_using_a_confirmed_catalog_match(tmp_path, monkeypatch):
+    store = MusicStore(tmp_path / 'library')
+    fixture = store.tracks_dir / ('a'*32 + '.m4a')
+    make_m4a(fixture)
+    store.add_track({'id': 'a'*32, 'video_id': 'NMRhx71bGo4', 'title': 'Joji - Glimpse of Us',
+        'artist': '88rising', 'duration': 200, 'filename': fixture.name, 'extension': 'm4a',
+        'bytes': fixture.stat().st_size})
+    monkeypatch.setattr(engine, '_catalog_search', lambda *a: [
+        {'video_id': 'abcdefghijk', 'title': 'Glimpse of Us', 'artist': 'Joji', 'album': 'SMITHEREENS',
+         'duration': 200, 'source_quality': 'official'}])
+    monkeypatch.setattr(engine.urllib.request, 'urlopen', lambda *a, **kw: ArtworkResponse())
+    manager = engine.DownloadManager(store)
+    try:
+        manager.repair_library();manager.pool.shutdown(wait=True)
+        song = store.get_track('a'*32)
+        assert song['artist'] == 'Joji'
+        assert song['album'] == 'SMITHEREENS'
+    finally:
+        manager.pool.shutdown(wait=True)
+
+
+def test_refreshing_mp3_tags_keeps_existing_cover_if_the_cdn_is_offline(tmp_path, monkeypatch):
+    path = tmp_path / 'song.mp3';make_audio(path)
+    monkeypatch.setattr(engine, '_download_artwork', lambda *a: (JPEG_1PX, 'image/jpeg'))
+    assert engine._embed_music_metadata(path, {'title': 'Song', 'artist': 'Artist'}, 'NMRhx71bGo4')
+    monkeypatch.setattr(engine, '_download_artwork', lambda *a: None)
+    assert engine._embed_music_metadata(path, {'title': 'Song', 'artist': 'Artist', 'album': 'Album'}, 'NMRhx71bGo4')
+    assert bytes(MP3(path).tags.getall('APIC')[0].data) == JPEG_1PX
+
+
+def test_spotify_structured_release_date_becomes_a_real_year_and_date():
+    details = engine.resolve_music_metadata({'title': 'Nights', 'artist': 'Frank Ocean',
+        'album': 'Blonde', 'release_date': {'day': 20, 'month': 8, 'year': 2016}})
+    assert details['release_date'] == '2016-08-20'
+    assert details['year'] == '2016'
+
+
+def test_explicit_song_and_singer_credits_take_priority_over_a_label_channel():
+    details = engine.resolve_music_metadata({'title': 'Afreen Afreen with lyrics and translations',
+        'uploader': 'Saregama Music', 'description': 'Song: Afreen Afreen\nSinger: Ustad Nusrat Fateh Ali Khan\n'})
+    assert details['artist'] == 'Ustad Nusrat Fateh Ali Khan'
+    assert details['title'] == 'Afreen Afreen'
+    assert details['album'] == ''
+
+
+def test_repair_reads_source_credits_when_the_catalog_cannot_identify_a_release(tmp_path, monkeypatch):
+    store = MusicStore(tmp_path / 'library');fixture = store.tracks_dir / ('a'*32 + '.m4a');make_m4a(fixture)
+    store.add_track({'id': 'a'*32, 'video_id': 'NMRhx71bGo4', 'title': 'Afreen Afreen with lyrics',
+        'artist': 'Saregama Music', 'duration': 361, 'filename': fixture.name, 'extension': 'm4a', 'bytes': fixture.stat().st_size})
+    class MetadataOnly:
+        def __init__(self, _options): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def extract_info(self, _url, download):
+            assert download is False
+            return {'title': 'Afreen Afreen with lyrics', 'uploader': 'Saregama Music',
+                'description': 'Song: Afreen Afreen\nSinger: Ustad Nusrat Fateh Ali Khan\n', 'duration': 361}
+    monkeypatch.setattr(engine, 'YoutubeDL', MetadataOnly)
+    monkeypatch.setattr(engine.urllib.request, 'urlopen', lambda *a, **kw: ArtworkResponse())
+    manager = engine.DownloadManager(store)
+    try:
+        manager.repair_library();manager.pool.shutdown(wait=True)
+        song = store.get_track('a'*32)
+        assert song['artist'] == 'Ustad Nusrat Fateh Ali Khan'
+        assert song['title'] == 'Afreen Afreen'
+        assert not song['album']
+    finally:
+        manager.pool.shutdown(wait=True)

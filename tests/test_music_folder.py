@@ -53,3 +53,47 @@ def test_unavailable_folder_does_not_lose_internal_download(tmp_path):
     store.add_track(track(store))
     assert len(store.list_tracks()) == 1
     assert store.music_folder_status()['error']
+
+
+def test_deleting_a_linked_folder_song_removes_saved_song_and_history(tmp_path):
+    store = MusicStore(tmp_path / 'private')
+    song = track(store)
+    store.add_track(song)
+    folder = tmp_path / 'Music'
+    folder.mkdir()
+    store.set_music_folder(str(folder))
+    store.save_job({'id': song['id'], 'status': 'complete', 'created_at': '2026-01-01'})
+    (folder / 'Artist - Song.webm').unlink()
+    store.sync_music_folder()
+    assert store.list_tracks() == []
+    assert store.get_track(song['id']) is None
+    assert store.load_jobs() == []
+    assert list(folder.iterdir()) == []
+
+
+def test_deleting_a_saved_song_removes_only_its_linked_folder_copy(tmp_path):
+    store = MusicStore(tmp_path / 'private')
+    folder = tmp_path / 'Music'
+    folder.mkdir()
+    unrelated = folder / 'Artist - Song.webm'
+    unrelated.write_bytes(b'other song')
+    store.set_music_folder(str(folder))
+    song = track(store)
+    store.add_track(song)
+    assert store.delete_track(song['id'])
+    assert unrelated.read_bytes() == b'other song'
+    assert not (folder / 'Artist - Song (2).webm').exists()
+
+
+def test_refreshing_saved_library_reconciles_folder_deletions(tmp_path):
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+    app = create_app(tmp_path / 'private')
+    store = app.state.store
+    song = track(store)
+    store.add_track(song)
+    folder = tmp_path / 'Music';folder.mkdir()
+    store.set_music_folder(str(folder))
+    (folder / 'Artist - Song.webm').unlink()
+    with TestClient(app, base_url='http://localhost') as client:
+        assert client.get('/api/tracks').json()['tracks'] == []

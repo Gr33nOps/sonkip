@@ -6,11 +6,43 @@ import android.media.MediaFormat;
 import android.media.MediaMuxer;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.BufferedOutputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
 /** Extracts an existing AAC track into an audio-only M4A container without transcoding. */
 public final class AndroidAudioExtractor {
     private AndroidAudioExtractor() {}
+
+    public static void extractOpus(String sourcePath,String targetPath)throws Exception {
+        MediaExtractor extractor=new MediaExtractor();File target=new File(targetPath);
+        try {
+            extractor.setDataSource(sourcePath);MediaFormat format=null;int track=-1;
+            for(int i=0;i<extractor.getTrackCount();i++) {
+                MediaFormat candidate=extractor.getTrackFormat(i);
+                if("audio/opus".equals(candidate.getString(MediaFormat.KEY_MIME))){format=candidate;track=i;break;}
+            }
+            if(format==null)throw new IOException("This WebM has no Opus audio track");
+            ByteBuffer csd=format.getByteBuffer("csd-0").duplicate();byte[] head=new byte[csd.remaining()];csd.get(head);
+            int preSkip=(head[10]&255)|((head[11]&255)<<8);
+            long endGranule=format.containsKey(MediaFormat.KEY_DURATION)?
+                preSkip+format.getLong(MediaFormat.KEY_DURATION)*48/1000:-1;
+            extractor.selectTrack(track);ByteBuffer buffer=ByteBuffer.allocateDirect(1024*1024);
+            try(BufferedOutputStream output=new BufferedOutputStream(new FileOutputStream(target))) {
+                OggOpusWriter writer=new OggOpusWriter(output,head,java.util.concurrent.ThreadLocalRandom.current().nextInt());
+                while(true) {
+                    if(Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("Audio extraction interrupted");
+                    buffer.clear();int size=extractor.readSampleData(buffer,0);
+                    if(size<0)break;
+                    byte[] packet=new byte[size];buffer.position(0);buffer.get(packet);
+                    boolean more=extractor.advance();writer.packet(packet,!more,endGranule);
+                    if(!more)break;
+                }
+            }
+        } catch(Exception error){target.delete();throw error;}
+        finally {extractor.release();}
+    }
 
     public static void extractM4a(String sourcePath, String targetPath) throws Exception {
         MediaExtractor extractor = new MediaExtractor();

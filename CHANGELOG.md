@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.7.1 — 2026-11-02
+
+- Read every page of public Spotify playlists, including playlists larger than 100 tracks, and preserve each recording's album, album artist, release type, artwork, and album track number.
+- Match artist-delivered YouTube Music recordings first. Reject lyric uploads, unrelated performers, and unwanted versions; report repeated recordings and unmatched tracks separately.
+- Preserve search metadata when saving individual Android songs. Avoid classifying missing release information as a single.
+- Embed covers in original Android audio by remuxing WebM Opus to Ogg Opus and MP4 AAC to M4A without re-encoding. Retry unavailable artwork with another source and retain existing MP3 covers during an offline tag refresh.
+- Add **Library → Repair details & covers** for existing downloads and notify Android's music scanner after folder updates.
+- Display saved songs' embedded covers in the Android Library without requiring an internet thumbnail request.
+- Connect Saved and the selected Music folder: reconcile deletions in either direction, retain songs when the folder is unavailable, and update linked copies after metadata repair.
+
 ## 2.7.0
 
 - Match the Android app to the website with square controls, fine borders, paper and ink surfaces, orange accents, and acid-yellow playback states.

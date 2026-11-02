@@ -38,9 +38,10 @@ public class MusicFolderTest {
         assertTrue(audio.isFile());
     }
     public static class TestDocuments extends android.content.ContentProvider {
-        java.io.File output;String name;int created;
+        java.io.File output;String name;int created;boolean available=true;boolean throwsOnMissing;
         public boolean onCreate(){return true;}
         public android.os.Bundle call(String method,String arg,android.os.Bundle extras){
+            if(method.equals("android:deleteDocument")){if(output!=null)output.delete();return new android.os.Bundle();}
             if(method.equals("android:createDocument")) {
                 name=extras.getString("_display_name");created++;
                 try{output=java.io.File.createTempFile("song", ".webm",getContext().getCacheDir());}catch(Exception e){throw new RuntimeException(e);}
@@ -49,11 +50,63 @@ public class MusicFolderTest {
             return new android.os.Bundle();
         }
         public android.os.ParcelFileDescriptor openFile(android.net.Uri uri,String mode)throws java.io.FileNotFoundException{return android.os.ParcelFileDescriptor.open(output,android.os.ParcelFileDescriptor.MODE_READ_WRITE);}
-        public android.database.Cursor query(android.net.Uri u,String[] p,String s,String[] a,String order){android.database.MatrixCursor c=new android.database.MatrixCursor(p);if(output!=null && output.exists())c.addRow(new Object[]{"song"});return c;}
+        public android.database.Cursor query(android.net.Uri u,String[] p,String s,String[] a,String order){
+            if(!available)throw new SecurityException("Folder permission unavailable");
+            android.database.MatrixCursor c=new android.database.MatrixCursor(p);
+            if(u.getPath().endsWith("/children")){if(output!=null && output.exists())c.addRow(new Object[]{"song"});}
+            else if(u.getPath().endsWith("/root"))c.addRow(new Object[]{"root"});
+            else if(throwsOnMissing && (output==null || !output.exists()))throw new IllegalArgumentException("Missing file for document");
+            else if(output!=null && output.exists())c.addRow(new Object[]{"song"});return c;
+        }
         public String getType(android.net.Uri u){return "audio/webm";}
         public android.net.Uri insert(android.net.Uri u,android.content.ContentValues v){throw new UnsupportedOperationException();}
         public int delete(android.net.Uri u,String s,String[] a){return 0;}
         public int update(android.net.Uri u,android.content.ContentValues v,String s,String[] a){return 0;}
+    }
+    @Test public void removedFolderFileIsReconciledWithoutRecreatingIt() throws Exception {
+        android.content.Context context=RuntimeEnvironment.getApplication();
+        MusicFolder.prefs(context).edit().clear().commit();
+        TestDocuments provider=new TestDocuments();
+        android.content.pm.ProviderInfo info=new android.content.pm.ProviderInfo();info.authority="music-test";
+        provider.attachInfo(context,info);
+        org.robolectric.shadows.ShadowContentResolver.registerProviderInternal("music-test",provider);
+        java.io.File root=new java.io.File(context.getFilesDir(),"music/tracks");root.mkdirs();
+        java.nio.file.Files.write(new java.io.File(root,"Song.webm").toPath(),new byte[]{1,2,3});
+        JSONArray tracks=new JSONArray("[{\"id\":\"saved\",\"filename\":\"Song.webm\",\"extension\":\"webm\"}]");
+        android.net.Uri tree=android.net.Uri.parse("content://music-test/tree/root");
+        MusicFolder.copyTracks(context,tree,tracks);provider.output.delete();provider.throwsOnMissing=true;
+        JSONArray removed=MusicFolder.reconcileTracks(context,tree,tracks);
+        assertEquals("saved",removed.getString(0));
+        assertEquals(1,provider.created);
+    }
+    @Test public void removingSavedSongDeletesItsLinkedFolderDocument() throws Exception {
+        android.content.Context context=RuntimeEnvironment.getApplication();
+        MusicFolder.prefs(context).edit().clear().commit();
+        TestDocuments provider=new TestDocuments();
+        android.content.pm.ProviderInfo info=new android.content.pm.ProviderInfo();info.authority="music-test";
+        provider.attachInfo(context,info);
+        org.robolectric.shadows.ShadowContentResolver.registerProviderInternal("music-test",provider);
+        java.io.File root=new java.io.File(context.getFilesDir(),"music/tracks");root.mkdirs();
+        java.nio.file.Files.write(new java.io.File(root,"Song.webm").toPath(),new byte[]{1,2,3});
+        JSONArray tracks=new JSONArray("[{\"id\":\"saved\",\"filename\":\"Song.webm\",\"extension\":\"webm\"}]");
+        android.net.Uri tree=android.net.Uri.parse("content://music-test/tree/root");
+        MusicFolder.copyTracks(context,tree,tracks);
+        assertTrue(provider.output.exists());
+        MusicFolder.reconcileTracks(context,tree,new JSONArray());
+        assertFalse(provider.output.exists());
+    }
+    @Test public void unavailableFolderNeverMeansDeleteAllSavedSongs() throws Exception {
+        android.content.Context context=RuntimeEnvironment.getApplication();
+        MusicFolder.prefs(context).edit().clear().putString("content://music-test/tree/root|saved", "content://music-test/document/song").commit();
+        TestDocuments provider=new TestDocuments();provider.available=false;
+        android.content.pm.ProviderInfo info=new android.content.pm.ProviderInfo();info.authority="music-test";
+        provider.attachInfo(context,info);
+        org.robolectric.shadows.ShadowContentResolver.registerProviderInternal("music-test",provider);
+        try {
+            MusicFolder.reconcileTracks(context,android.net.Uri.parse("content://music-test/tree/root"),new JSONArray());
+            fail("An unreadable folder must stop reconciliation");
+        } catch(SecurityException | java.io.IOException expected) {}
+        assertTrue(MusicFolder.prefs(context).contains("content://music-test/tree/root|saved"));
     }
     @Test public void folderCopiesUseAudioMimeTypes() throws Exception {
         Class<?> type=null;

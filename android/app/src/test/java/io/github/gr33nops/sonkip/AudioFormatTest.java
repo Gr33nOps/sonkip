@@ -31,4 +31,11 @@ public class AudioFormatTest {
         assertEquals("m4a", request.getString("audio_format"));
         assertFalse(request.getBoolean("embed_metadata"));
     }
+    @Test public void singleSongDownloadPreservesSearchReleaseMetadata() throws Exception {
+        JSONObject source = new JSONObject().put("album", "Real Album").put("artist", "Artist")
+            .put("artwork_url", "https://i.scdn.co/image/cover").put("track_number", 4);
+        JSONObject request = MainActivity.downloadRequest("NMRhx71bGo4", "m4a", true, source);
+        assertEquals("Real Album", request.getJSONObject("metadata").getString("album"));
+        assertEquals(4, request.getJSONObject("metadata").getInt("track_number"));
+    }
 }

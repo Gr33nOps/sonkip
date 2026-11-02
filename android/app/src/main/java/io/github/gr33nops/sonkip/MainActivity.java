@@ -41,6 +41,7 @@ public class MainActivity extends Activity {
     private boolean backupBusy;
     private String audioFormat="m4a";
     private boolean embedMetadata=true;
+    private boolean repairingLibrary;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -140,6 +141,7 @@ public class MainActivity extends Activity {
                 case "delete-selected": confirmDeleteSelected(value);break;
                 case "library-backup": backupMenu();break;
                 case "music-folder": musicFolderMenu();break;
+                case "repair-library": repairLibrary();break;
                 case "audio-format": audioFormatMenu();break;
                 case "embed-metadata": toggleMetadata();break;
                 case "player-options": playerOptions();break;
@@ -191,7 +193,7 @@ public class MainActivity extends Activity {
                 if (DeviceMusic.contains(DeviceMusic.read(this), source)) {
                     main.post(() -> ui.notice("Already on this phone · download skipped",false)); return;
                 }
-                request("POST","/api/downloads",downloadRequest(video,audioFormat,embedMetadata));main.post(() -> {ui.showTab("downloads");ui.notice("Song queued · "+audioFormatLabel(audioFormat),false);refresh();});
+                request("POST","/api/downloads",downloadRequest(video,audioFormat,embedMetadata,source));main.post(() -> {ui.showTab("downloads");ui.notice("Song queued · "+audioFormatLabel(audioFormat),false);refresh();});
             }
             catch(Exception error) {main.post(() -> ui.notice(error.getMessage(),true));}
             finally {DownloadService.end();}
@@ -224,6 +226,9 @@ public class MainActivity extends Activity {
     }
     static JSONObject downloadRequest(String video, String audioFormat, boolean embedMetadata) throws org.json.JSONException {
         return new JSONObject().put("video_id",video).put("audio_format",audioFormat).put("embed_metadata",embedMetadata);
+    }
+    static JSONObject downloadRequest(String video, String audioFormat, boolean embedMetadata, JSONObject metadata) throws org.json.JSONException {
+        return downloadRequest(video,audioFormat,embedMetadata).put("metadata", metadata);
     }
     static JSONObject playlistRequest(String url, String audioFormat, boolean embedMetadata) throws org.json.JSONException {
         return new JSONObject().put("url",url).put("audio_format",audioFormat).put("embed_metadata",embedMetadata);
@@ -261,7 +266,7 @@ public class MainActivity extends Activity {
                     .putBoolean("embed_metadata",embedMetadata).apply();
                 ui.setAudioFormatLabel(audioFormatLabel(audioFormat));ui.setMetadataEnabled(embedMetadata);
                 new BrandDialog(this).setTitle("Music folder")
-                    .setMessage("Choose a folder if you want other music players to see your downloads. Sonkip keeps its own library copy. You can choose or change the folder later in Library.")
+                    .setMessage("Connect a Music folder for other players. Deleting a linked song from this folder or Saved removes both copies after sync. You can change or disconnect the folder later in Library.")
                     .setPositiveButton("Choose folder",(d,w)->{
                         getSharedPreferences("sonkip",MODE_PRIVATE).edit().putBoolean("setup_complete",true).apply();
                         startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
@@ -388,28 +393,46 @@ public class MainActivity extends Activity {
         String segment=folder.isEmpty()?null:Uri.parse(folder).getLastPathSegment();
         String folderName=segment==null?"Selected folder":Uri.decode(segment);
         if(folderName.startsWith("primary:"))folderName="Internal storage / "+folderName.substring("primary:".length());
-        String[] options=folder.isEmpty()?new String[]{"Choose a Music folder"}:new String[]{"Change folder · "+folderName,"Copy saved songs now","Stop automatic copies"};
+        String[] options=folder.isEmpty()?new String[]{"Choose a Music folder"}:new String[]{"Change folder · "+folderName,"Sync saved songs and folder","Disconnect folder"};
         new BrandDialog(this).setTitle("Music folder")
             .setItems(options,(d,which)->{
                 if(which==0)startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),45);
                 else if(which==1)syncMusicFolder();
-                else {MusicFolder.prefs(this).edit().remove("tree").remove("error").apply();ui.notice("Automatic copies stopped. Existing files are kept.",false);}
+                else {MusicFolder.prefs(this).edit().remove("tree").remove("error").apply();ui.notice("Folder disconnected. Existing files are kept.",false);}
             }).setNegativeButton("Close",null).show();
         if(!error.isEmpty())ui.notice(error,true);
     }
     private void syncMusicFolder() {
-        DownloadService.begin(this);ui.notice("Copying music to your folder…",false);
-        requests.execute(()->{try{MusicFolder.sync(this);main.post(()->{String error=MusicFolder.prefs(this).getString("error","");ui.notice(error.isEmpty()?"Music folder synced. Future songs will be copied automatically.":error,!error.isEmpty());});}finally{DownloadService.end();}});
+        DownloadService.begin(this);ui.notice("Syncing your Music folder…",false);
+        requests.execute(()->{try{MusicFolder.sync(this);main.post(()->{String error=MusicFolder.prefs(this).getString("error","");ui.notice(error.isEmpty()?"Music folder synced · Saved and folder deletions are connected.":error,!error.isEmpty());});}finally{DownloadService.end();}});
+    }
+    private void repairLibrary() {
+        DownloadService.begin(this);repairingLibrary=true;ui.notice("Repairing song details and covers…",false);
+        requests.execute(()->{
+            try {request("POST","/api/library/repair",new JSONObject());}
+            catch(Exception error){main.post(()->{repairingLibrary=false;ui.notice(error.getMessage(),true);});}
+            finally {DownloadService.end();}
+        });
     }
     private void refresh() {
         if(!ready || isDestroyed() || !refreshing.compareAndSet(false,true))return;
         requests.execute(() -> {
             try {
+                MusicFolder.syncIfDue(this);
                 JSONArray saved=request("GET","/api/tracks",null).getJSONArray("tracks");
-                JSONArray jobs=request("GET","/api/jobs",null).getJSONArray("jobs");
+                JSONObject state=request("GET","/api/jobs",null);
+                JSONArray jobs=state.getJSONArray("jobs");
+                JSONObject repair=state.optJSONObject("metadata_repair");
                 main.post(() -> {
                     tracks=saved;ui.setTracks(saved);ui.setJobs(jobs);
+                    if(repair!=null && repair.optBoolean("running")) {
+                        repairingLibrary=true;
+                        ui.notice("Repairing details & covers · "+repair.optInt("completed")+" / "+repair.optInt("total"),false);
+                    } else if(repair!=null && repairingLibrary) {
+                        repairingLibrary=false;JSONArray errors=repair.optJSONArray("errors");int failed=errors==null?0:errors.length();
+                        ui.notice("Repair finished · "+repair.optInt("completed")+" updated"+(failed>0?" · "+failed+" could not be updated":""),failed>0);
+                    }
                     String folderError=MusicFolder.prefs(this).getString("error","");
                     if(!folderError.isEmpty())ui.notice(folderError,true);
                 });
@@ -535,7 +558,7 @@ public class MainActivity extends Activity {
     }
     private void confirmDelete(String id) throws Exception {
         JSONObject song=track(id);
-        new BrandDialog(this).setTitle(song.optString("title")).setMessage("Remove this song from Sonkip? Files you exported are kept.")
+        new BrandDialog(this).setTitle(song.optString("title")).setMessage("Remove this song from Saved and your connected Music folder?")
             .setNegativeButton("Keep",null).setPositiveButton("Remove",(dialog,which) -> requests.execute(() -> {
                 try {request("DELETE","/api/tracks/"+id,null);main.post(() -> {
                     if(PlaybackService.current!=null && id.equals(PlaybackService.current.trackId)) {
@@ -549,7 +572,7 @@ public class MainActivity extends Activity {
         JSONArray ids=new JSONArray(value);
         if(ids.length()==0)return;
         new BrandDialog(this).setTitle("Delete selected songs?")
-            .setMessage(ids.length()+" song"+(ids.length()==1?"":"s")+" will be removed from Sonkip. Files exported to another folder are kept.")
+            .setMessage(ids.length()+" song"+(ids.length()==1?"":"s")+" will be removed from Saved and your connected Music folder.")
             .setNegativeButton("Keep",null).setPositiveButton("Delete",(dialog,which)->requests.execute(()->{
                 try {
                     request("POST","/api/tracks/delete-selected",new JSONObject().put("track_ids",ids));

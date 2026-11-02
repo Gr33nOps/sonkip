@@ -4,7 +4,7 @@
 
 Sonkip is a free, open-source music downloader and private local library for Android, Windows, macOS, and Linux. Save public songs, playlists, and albums on your own device with available artwork and music metadata. Sonkip has no accounts, ads, analytics, or hosted cloud library.
 
-[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.7.0/Sonkip-2.7.0.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.7.0) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
+[Download Android APK](https://github.com/Gr33nOps/sonkip/releases/download/v2.7.1/Sonkip-2.7.1.apk) · [Desktop setup](#quick-start) · [Website](https://gr33nops.github.io/sonkip/) · [Release notes](https://github.com/Gr33nOps/sonkip/releases/tag/v2.7.1) · [Report a bug](https://github.com/Gr33nOps/sonkip/issues)
 
 **Android 7+ · Windows · macOS · Linux**
 
@@ -14,7 +14,7 @@ On first launch, Sonkip asks for your preferred audio format, whether to include
 
 If an Android source has no AAC stream for the selected M4A format, Sonkip saves the available original audio and labels the fallback format in Downloads. Other unavailable or restricted sources can still fail.
 
-Use **Library → Music folder** to copy existing and future songs into a folder other music players can scan. Sonkip keeps its internal library copy as well. Changing or disabling this setting does not delete copies already placed in earlier folders.
+Use **Library → Music folder** to connect existing and future songs to a folder other music players can scan. Deleting a linked song from either Saved or that folder removes the other copy when Sonkip next syncs. An unavailable folder does not count as deletion. Disconnecting or changing the folder keeps copies in earlier folders; independently exported files are also kept.
 
 The GitHub Pages site is a static project page. The downloader intentionally runs on your own computer so searches, audio files, and library data are never sent to a sonkip server.
 
@@ -51,7 +51,9 @@ Download an APK from Releases, install it, and open Sonkip. Use Find to search o
 
 On Android, tap **Save as** in Find to choose Original audio, M4A/AAC, or Opus/WebM. Compatible M4A/AAC is selected by default on a fresh install. The choice applies to individual songs and every track in an imported playlist. Desktop Sonkip additionally supports MP3 and FLAC conversion.
 
-The **Music details & artwork** option is enabled by default for new downloads. Tagged M4A files can show their song title, artist, album and cover in players such as Gramophone after Sonkip copies them to your selected Music folder. Available details depend on the public metadata supplied by the matched YouTube source; Sonkip uses the video thumbnail when cover art is available.
+The **Music details & artwork** option is enabled by default for new downloads. Tagged audio can show its song title, artist, album and cover in players such as Gramophone after Sonkip syncs your Music folder. With this option enabled, WebM Opus audio is repackaged as Ogg Opus and MP4 AAC audio as M4A so players can read embedded artwork; the encoded audio is preserved. Spotify imports carry the source release details, while YouTube Music supplies catalog metadata for matching recordings. A video thumbnail is used when release artwork is unavailable.
+
+Use **Library → Repair details & covers** on Android to update songs saved by older versions. Sonkip reuses their audio, finds matching release details, embeds available covers, and updates linked Music-folder copies. Recordings without a confirmed release keep their available details.
 
 Force-stopping Sonkip, clearing it from Recents on some phones, or restarting the phone stops active work. Interrupted jobs resume when you reopen Sonkip; cancelled jobs stay cancelled. Partial files are retained for resuming where the source supports it. Use **Downloads → Retry failed** for other failures. Android 15 limits background data-sync time to six hours per day. Some manufacturers apply additional battery restrictions; Sonkip does not change those settings automatically.
 
@@ -71,7 +73,7 @@ On desktop, open **Saved → Export backup** or **Restore backup**. The ZIP cont
 
 Public downloads use locally generated proof-of-origin tokens. Desktop uses Chrome or Chromium; Android uses an internal WebView behind its native interface. No cookie import is needed for public tracks. Private, restricted, unavailable, or DRM-protected media may still fail.
 
-Matching a playlist can take a minute or more before downloads begin. Spotify's public embed can expose only part of a large playlist; Sonkip reports the number of tracks it could read, not a guaranteed full playlist count. Matches may be different uploads or editions. Sonkip skips candidates with clearly different titles, artists, or versions instead of downloading the first search result.
+Matching a playlist can take several minutes before downloads begin. Sonkip reads every public Spotify playlist page instead of stopping at the embed's 100-track preview. A page-loading failure is reported before anything is queued. The review distinguishes source tracks, repeated recordings, and unmatched tracks. Automatic matches prefer artist-delivered recordings and reject lyric uploads, unrelated performers, and unwanted versions. A restricted or unavailable official recording may remain unmatched.
 
 Every playlist or album import now opens a review list first. All confident and uncertain matches are selected by default; deselect anything you do not want, then choose **Save selected**. Nothing is queued until that confirmation. Exact title/artist matches and official artist uploads are ranked ahead of live, cover, remix, remaster, and unrelated variants, but you should still review the list because a YouTube match is not a guarantee of an identical recording.
 
@@ -189,7 +191,7 @@ Install Java 17, Gradle 8.13, Android SDK 36, NDK `28.2.13676358`, CMake and Nin
 - Browser playback depends on the format: modern browsers commonly handle WebM/Opus and MP4/AAC, but some formats require VLC or a local player.
 - Searching YouTube is an external network request and can occasionally be blocked, rate-limited or changed upstream. Upgrade with `pip install -U 'yt-dlp[default]'`.
 - Download jobs live in memory while the app runs. Finished library records persist. Stopping the app interrupts active downloads.
-- Track art is loaded from `i.ytimg.com` while online; original media is local, but covers aren't cached offline.
+- Search and playlist previews load artwork online. The Android Library reads saved songs' embedded covers locally, including while offline.
 - No automated YouTube integration test is included, as it would require real network access.
 - Run this on your own trusted computer; **do not expose it to your LAN or the public internet**. The app has no user authentication and is not hardened for multi-user hosting.
 

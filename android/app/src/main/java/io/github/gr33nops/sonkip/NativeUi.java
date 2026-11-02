@@ -295,6 +295,9 @@ public class NativeUi extends LinearLayout {
         JSONArray entries=playlistPreview.optJSONArray("entries");if(entries==null)entries=new JSONArray();
         content.addView(text(playlistPreview.optString("title","Playlist"),21,INK,true));
         TextView count=text(selectedPlaylistTracks.size()+" selected",14,MUTED,true);count.setTag("playlist-selected-count");content.addView(count);gap(8);
+        int repeats=playlistPreview.optInt("duplicate_count");
+        content.addView(text(playlistPreview.optInt("source_count",entries.length())+" source tracks"+
+            (repeats>0?" · "+repeats+" repeated recordings":""),12,MUTED,false));
         JSONArray unmatched=playlistPreview.optJSONArray("unmatched");
         if(unmatched!=null && unmatched.length()>0){content.addView(text(unmatched.length()+" tracks could not be matched. Check the songs below before saving.",12,ORANGE_TEXT,false));gap(8);}
         LinearLayout controls=row();
@@ -366,6 +369,7 @@ public class NativeUi extends LinearLayout {
         storage.addView(backup,new LayoutParams(0,dp(44),1));
         storage.addView(button("Music folder","music-folder",v->actions.run("music-folder","")),new LayoutParams(0,dp(44),1));
         content.addView(storage);
+        if(tracks.length()>0)content.addView(button("Repair details & covers","repair-library",v->actions.run("repair-library","")));
         if(selectingTracks)content.addView(button("Done · "+selectedTracks.size()+" selected","selection-done",v->{selectingTracks=false;selectedTracks.clear();render();}));
         gap(16);
         if(!libraryQuery.isEmpty()){content.addView(text("Matching “"+libraryQuery+"”",12,MUTED,false));gap(8);}
@@ -444,25 +448,45 @@ public class NativeUi extends LinearLayout {
             if(!"https".equalsIgnoreCase(url.getProtocol()))return false;
             String host=url.getHost().toLowerCase(Locale.ROOT);
             return host.equals("i.ytimg.com") || host.equals("lh3.googleusercontent.com")
+                    || host.equals("yt3.googleusercontent.com")
                     || host.equals("i.scdn.co") || host.equals("image-cdn-ak.spotifycdn.com")
                     || host.equals("mosaic.scdn.co") || host.equals("i1.sndcdn.com");
         } catch(java.net.MalformedURLException ignored) {
             return false;
         }
     }
+    private java.io.File localArtworkFile(JSONObject item) {
+        String filename=item.optString("filename","");
+        if(filename.isEmpty())return null;
+        try {
+            java.io.File folder=new java.io.File(getContext().getFilesDir(),"music/tracks").getCanonicalFile();
+            java.io.File audio=new java.io.File(folder,filename).getCanonicalFile();
+            return folder.equals(audio.getParentFile()) && audio.isFile()?audio:null;
+        }catch(java.io.IOException ignored){return null;}
+    }
     private FrameLayout artworkTile(JSONObject item,String id) {
         FrameLayout tile=new FrameLayout(getContext());tile.setBackground(background(0xffe6e0d2,0));
         TextView mark=text("♪",22,ORANGE,true);mark.setGravity(Gravity.CENTER);tile.addView(mark,new FrameLayout.LayoutParams(-1,-1));
         String artwork=item.optString("artwork_url",item.optString("thumbnail")).trim();
-        if(!isTrustedArtworkUrl(artwork))return tile;
+        java.io.File audio=localArtworkFile(item);
+        boolean remote=isTrustedArtworkUrl(artwork);
+        if(audio==null && !remote)return tile;
         ImageView image=new ImageView(getContext());image.setTag("artwork-"+id);image.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
         image.setBackground(background(Color.TRANSPARENT,0));image.setClipToOutline(true);
         tile.addView(image,new FrameLayout.LayoutParams(-1,-1));
-        android.graphics.Bitmap cached=ART_CACHE.get(artwork);if(cached!=null){image.setImageBitmap(cached);return tile;}
+        String key=audio==null?artwork:audio.getAbsolutePath()+":"+audio.lastModified()+":"+audio.length();
+        android.graphics.Bitmap cached=ART_CACHE.get(key);if(cached!=null){image.setImageBitmap(cached);return tile;}
         ARTWORK.execute(()->{
             java.net.HttpURLConnection connection=null;
             try {
+                byte[] data=null;
+                if(audio!=null){
+                    android.media.MediaMetadataRetriever retriever=new android.media.MediaMetadataRetriever();
+                    try {retriever.setDataSource(audio.getAbsolutePath());data=retriever.getEmbeddedPicture();}
+                    catch(Exception ignored){}finally{retriever.release();}
+                }
+                if(data==null && remote){
                 connection=(java.net.HttpURLConnection)new java.net.URL(artwork).openConnection();connection.setConnectTimeout(5000);connection.setReadTimeout(10000);
                 connection.setInstanceFollowRedirects(false);
                 if(connection.getResponseCode()!=java.net.HttpURLConnection.HTTP_OK)return;
@@ -472,12 +496,15 @@ public class NativeUi extends LinearLayout {
                     byte[] buffer=new byte[8192];int count;
                     while((count=input.read(buffer))!=-1){if(bytes.size()+count>5L*1024L*1024L)return;bytes.write(buffer,0,count);}
                 }
-                byte[] data=bytes.toByteArray();BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;
+                data=bytes.toByteArray();
+                }
+                if(data==null || data.length>5L*1024L*1024L)return;
+                BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;
                 BitmapFactory.decodeByteArray(data,0,data.length,options);options.inSampleSize=1;
                 while(options.outWidth/options.inSampleSize>256 || options.outHeight/options.inSampleSize>256)options.inSampleSize*=2;
                 options.inJustDecodeBounds=false;
                 android.graphics.Bitmap bitmap=BitmapFactory.decodeByteArray(data,0,data.length,options);
-                if(bitmap!=null){ART_CACHE.put(artwork,bitmap);image.post(()->image.setImageBitmap(bitmap));}
+                if(bitmap!=null){ART_CACHE.put(key,bitmap);image.post(()->image.setImageBitmap(bitmap));}
             }catch(Exception ignored){}finally{if(connection!=null)connection.disconnect();}
         });
         return tile;
@@ -495,7 +522,7 @@ public class NativeUi extends LinearLayout {
             LinearLayout box=card();LinearLayout line=row();LinearLayout labels=column();
             TextView title=text(titles.getOrDefault(video,job.optString("title",video)),14,INK,true);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);labels.addView(title);
             String label = status.equals("complete") ? "Saved · ready to play" : status.equals("starting") ? "Preparing audio…" : status.equals("processing") ? "Finishing…" : status.equals("error") ? "Couldn't save this song" : status.equals("queued") ? "Waiting in queue" : "Downloading · "+job.optInt("percent")+"%";
-            if(status.equals("complete") && !job.optString("format_fallback").isEmpty())
+            if(status.equals("complete") && usefulMetadata(job.optString("format_fallback")))
                 label = "Saved as "+job.optString("format_fallback").toUpperCase(Locale.ROOT)+" · M4A unavailable";
             labels.addView(text(label,11,status.equals("error")?ORANGE_TEXT:MUTED,false));line.addView(labels,new LayoutParams(0,-2,1));
             if(status.equals("error")) {
@@ -504,6 +531,8 @@ public class NativeUi extends LinearLayout {
             } else if(status.equals("complete")) {
                 Button play=button("▶","play-job-"+id,v -> actions.run("play",job.optString("track_id")));
                 play.setContentDescription("Play "+title.getText());line.addView(play,new LayoutParams(dp(48),dp(44)));box.addView(line);
+                String warning=job.optString("metadata_error","");
+                if(!warning.isEmpty() && !warning.equals("null"))box.addView(text(warning,11,ORANGE_TEXT,false));
             } else {
                 line.addView(button("Cancel","cancel-"+id,v->actions.run("cancel-download",id)),new LayoutParams(dp(70),dp(44)));box.addView(line);
                 ProgressBar progress=new ProgressBar(getContext(),null,android.R.attr.progressBarStyleHorizontal);

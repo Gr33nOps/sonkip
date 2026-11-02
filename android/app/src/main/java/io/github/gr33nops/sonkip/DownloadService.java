@@ -52,7 +52,10 @@ public class DownloadService extends Service {
             connection.setConnectTimeout(3000); connection.setReadTimeout(5000);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             try (InputStream input = connection.getInputStream()) { byte[] b = new byte[8192]; int n; while ((n = input.read(b)) != -1) bytes.write(b, 0, n); }
-            JSONArray jobs = DownloadNotice.currentBatch(new org.json.JSONObject(bytes.toString("UTF-8")).getJSONArray("jobs"),sessionJobs);
+            org.json.JSONObject state=new org.json.JSONObject(bytes.toString("UTF-8"));
+            org.json.JSONObject repair=state.optJSONObject("metadata_repair");
+            boolean repairing=repair!=null && repair.optBoolean("running");
+            JSONArray jobs = DownloadNotice.currentBatch(state.getJSONArray("jobs"),sessionJobs);
             int active = 0, done = 0, errors = 0;
             for (int i = 0; i < jobs.length(); i++) {
                 String status = jobs.getJSONObject(i).optString("status");
@@ -62,7 +65,7 @@ public class DownloadService extends Service {
                 MusicFolder.sync(this);
                 lastFolderSyncCompleted=done;
             }
-            final int remaining = active, completed = done, failed = errors;
+            final int remaining = active+(repairing?1:0), completed = done, failed = errors;
             main.post(() -> {
                 if (destroyed) return;
                 failures = 0;

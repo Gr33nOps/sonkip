@@ -22,8 +22,9 @@ android {
         applicationId = "io.github.gr33nops.sonkip"
         minSdk = 24
         targetSdk = 36
-        versionCode = 24
-        versionName = "2.7.0"
+        versionCode = 25
+        versionName = "2.7.1"
+        testInstrumentationRunner = "io.github.gr33nops.sonkip.DeviceRegressionChecks"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")

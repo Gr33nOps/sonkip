@@ -162,7 +162,10 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.BAD_GATEWAY, {"detail": f"Search provider unavailable: {str(exc)[:220]}"})
             return
         if path == "/api/jobs":
-            self._json(HTTPStatus.OK, {"jobs": self.server.manager.list_jobs()})
+            self._json(HTTPStatus.OK, {"jobs": self.server.manager.list_jobs(), "metadata_repair": self.server.manager.repair_status()})
+            return
+        if path == '/api/library/repair':
+            self._json(HTTPStatus.OK, self.server.manager.repair_status())
             return
         job_match = JOB_ROUTE.fullmatch(path)
         if job_match:
@@ -213,6 +216,9 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         body = self._body()
+        if path == '/api/library/repair':
+            self._json(HTTPStatus.ACCEPTED, self.server.manager.repair_library())
+            return
         if path == '/api/jobs/resume-interrupted':
             self._json(HTTPStatus.OK, {'job_ids': self.server.manager.resume_interrupted()})
             return
@@ -276,6 +282,7 @@ class AndroidRequestHandler(BaseHTTPRequestHandler):
                     {"preview_id": preview_id, "title": playlist["title"], "count": len(entries), "entries": entries,
                      "unmatched": playlist.get("unmatched", []), "notice": playlist.get("notice", ""),
                      "source_count": playlist.get("source_count", len(entries)),
+                     "duplicate_count": playlist.get("duplicate_count", 0),
                      "artwork_url": playlist.get("artwork_url", "")},
                 )
             return

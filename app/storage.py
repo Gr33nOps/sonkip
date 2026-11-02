@@ -19,6 +19,7 @@ class MusicStore:
     def __init__(self, home: Path):
         self.home = home.expanduser().resolve()
         self.folder_lock = threading.RLock()
+        self.deleted_track_ids: set[str] = set()
         self.tracks_dir = self.home / "tracks"
         self.tracks_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.home / "library.sqlite3"
@@ -42,6 +43,8 @@ class MusicStore:
             db.execute('CREATE TABLE IF NOT EXISTS download_jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS folder_copies (folder TEXT, track_id TEXT, filename TEXT, PRIMARY KEY(folder, track_id))')
+            if 'stamp' not in {r['name'] for r in db.execute('PRAGMA table_info(folder_copies)')}:
+                db.execute('ALTER TABLE folder_copies ADD COLUMN stamp TEXT')
             columns = {row['name'] for row in db.execute('PRAGMA table_info(tracks)').fetchall()}
             for name, sql_type in {
                 'album': 'TEXT', 'album_artist': 'TEXT', 'artwork_url': 'TEXT',
@@ -86,8 +89,24 @@ class MusicStore:
                         if destination.resolve() == self.tracks_dir.resolve():
                             continue
                         with self._connect() as db:
-                            previous = db.execute('SELECT filename FROM folder_copies WHERE folder=? AND track_id=?', (folder, track['id'])).fetchone()
+                            previous = db.execute('SELECT filename,stamp FROM folder_copies WHERE folder=? AND track_id=?', (folder, track['id'])).fetchone()
+                        stamp = f'{source.stat().st_size}:{source.stat().st_mtime_ns}'
                         if previous and (destination / previous['filename']).is_file():
+                            if previous['stamp'] != stamp:
+                                target = destination / previous['filename']
+                                staged = destination / ('.sonkip-' + uuid.uuid4().hex + source.suffix)
+                                try:
+                                    shutil.copyfile(source, staged)
+                                    os.replace(staged, target)
+                                    with self._connect() as db:
+                                        db.execute('UPDATE folder_copies SET stamp=? WHERE folder=? AND track_id=?', (stamp, folder, track['id']))
+                                finally:
+                                    staged.unlink(missing_ok=True)
+                            continue
+                        if previous:
+                            # Only a previously linked file's confirmed absence
+                            # means deletion. An unavailable folder is handled above.
+                            self.delete_track(track['id'])
                             continue
                         target = destination / source.name
                         suffix = 2
@@ -102,7 +121,7 @@ class MusicStore:
                             with output, source.open('rb') as audio:
                                 shutil.copyfileobj(audio, output, 1024 * 1024)
                             with self._connect() as db:
-                                db.execute('INSERT OR REPLACE INTO folder_copies VALUES (?,?,?)', (folder, track['id'], target.name))
+                                db.execute('INSERT OR REPLACE INTO folder_copies (folder,track_id,filename,stamp) VALUES (?,?,?,?)', (folder, track['id'], target.name, stamp))
                         except Exception:
                             target.unlink(missing_ok=True)
                             raise
@@ -292,14 +311,46 @@ class MusicStore:
         self._name_audio(track)
         self.sync_music_folder()
 
+    def replace_track_audio(self, track_id: str, staged: Path, metadata: dict) -> None:
+        with self.folder_lock:
+            track = self.get_track(track_id)
+            if track is None:
+                raise ValueError('Song was removed during repair')
+            original = self.path_for(track)
+            target = original.with_suffix(staged.suffix)
+            if target != original and target.exists():
+                target = self.tracks_dir / (uuid.uuid4().hex + staged.suffix)
+            fields = ('title', 'artist', 'album', 'album_artist', 'artwork_url', 'track_number',
+                      'release_date', 'release_id', 'release_type')
+            os.replace(staged, target)
+            with self._connect() as db:
+                db.execute('UPDATE tracks SET '+', '.join(f'{key}=?' for key in fields)+
+                    ', filename=?, bytes=?, extension=? WHERE id=?',
+                    (*[metadata.get(key) for key in fields], target.name, target.stat().st_size,
+                     target.suffix.lstrip('.'), track_id))
+            if target != original:
+                original.unlink(missing_ok=True)
+            self.sync_music_folder()
+
     def delete_track(self, track_id: str) -> bool:
         track = self.get_track(track_id)
         if track is None:
             return False
+        with self._connect() as db:
+            copies = db.execute('SELECT folder, filename FROM folder_copies WHERE track_id=?', (track_id,)).fetchall()
+        active_folder = self.music_folder_status()['folder']
+        for copy in copies:
+            if copy['folder'] != active_folder:
+                continue
+            folder = Path(copy['folder']).resolve()
+            target = (folder / copy['filename']).resolve()
+            if target.parent == folder and folder.is_dir():
+                target.unlink(missing_ok=True)
         path = self.path_for(track)
         path.unlink(missing_ok=True)
         with self._connect() as db:
             db.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
             db.execute("DELETE FROM download_jobs WHERE id = ?", (track_id,))
             db.execute("DELETE FROM folder_copies WHERE track_id = ?", (track_id,))
+        self.deleted_track_ids.add(track_id)
         return True

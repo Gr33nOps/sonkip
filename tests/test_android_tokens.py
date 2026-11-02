@@ -64,7 +64,7 @@ def test_android_m4a_fallback_extracts_audio_from_mp4(monkeypatch, tmp_path):
     monkeypatch.setattr(engine, 'YoutubeDL', Mp4YoutubeDL)
     manager = engine.DownloadManager(MusicStore(tmp_path))
     try:
-        job_id = manager.start('K3Qzzggn--s', 'm4a')
+        job_id = manager.start('K3Qzzggn--s', 'm4a', embed_metadata=False)
         for _ in range(100):
             job = manager.get_job(job_id)
             if job['status'] in ('complete', 'error'):
