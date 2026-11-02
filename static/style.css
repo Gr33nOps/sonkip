@@ -117,34 +117,10 @@ html[data-local-app="true"] .pages-only {
   letter-spacing: -0.07em;
 }
 .brand-mark {
-  width: 25px;
-  height: 25px;
-  border-radius: 50%;
-  background: var(--orange);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 2px;
-  padding-bottom: 6px;
-}
-.brand-mark i {
-  width: 3px;
-  height: 7px;
-  background: var(--ink);
-  animation: beat 0.65s ease-in-out infinite alternate;
-}
-.brand-mark i:nth-child(2) {
-  height: 13px;
-  animation-delay: -0.3s;
-}
-.brand-mark i:nth-child(3) {
-  height: 5px;
-  animation-delay: -0.5s;
-}
-@keyframes beat {
-  to {
-    height: 14px;
-  }
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
 }
 .header-nav {
   height: 100%;
@@ -1258,7 +1234,8 @@ html[data-local-app="true"] .pages-only {
 }
 @media (max-width: 520px) {
   .brand-mark {
-    display: none;
+    width: 26px;
+    height: 26px;
   }
   .brand {
     font-size: 22px;
